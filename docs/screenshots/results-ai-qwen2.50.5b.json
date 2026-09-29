@@ -1,0 +1,177 @@
+{
+  "results": [
+    {
+      "name": "다운로드 일시정지 (.part 유지)",
+      "ok": true,
+      "detail": "55MB"
+    },
+    {
+      "name": "이어받기 → 크기·SHA-256 검증 → 설치",
+      "ok": true,
+      "detail": "104s"
+    },
+    {
+      "name": "설치한 모델이 자동 선택됨",
+      "ok": true,
+      "detail": "qwen2.5-0.5b"
+    },
+    {
+      "name": "모델 파일이 LocalAppData(데이터 폴더)에 있음",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "설치 후 과거 미분류 기록을 AI로 다시 분류",
+      "ok": true,
+      "detail": "4110ms (엔진 시작 포함)"
+    },
+    {
+      "name": "AI 엔진 준비됨",
+      "ok": true,
+      "detail": "{\"state\":\"ready\",\"model_id\":\"qwen2.5-0.5b\",\"port\":7765,\"pid\":11020}"
+    },
+    {
+      "name": "AI 엔진이 127.0.0.1 에서만 연결을 받음",
+      "ok": true,
+      "detail": "127.0.0.1:7765"
+    },
+    {
+      "name": "재분류 결과: 1-2 박서준 출결(결석)",
+      "ok": true,
+      "detail": "[{\"kind\":\"student\",\"label\":\"1-2 박서준\",\"area\":\"attendance\",\"date\":null,\"done\":false},{\"kind\":\"event\",\"label\":\"결석계 받기\",\"area\":null,\"date\":\"2026-10-05\",\"done\":false}]"
+    },
+    {
+      "name": "재분류 결과: 결석계 받기 → 다음 주 월요일(10/5)",
+      "ok": false,
+      "detail": "[{\"kind\":\"student\",\"label\":\"1-2 박서준\",\"area\":\"attendance\",\"date\":null,\"done\":false},{\"kind\":\"event\",\"label\":\"결석계 받기\",\"area\":null,\"date\":\"2026-10-05\",\"done\":false}]"
+    },
+    {
+      "name": "A: 학생 2-1 김민수 + 출결",
+      "ok": true,
+      "detail": "[{\"kind\":\"student\",\"label\":\"2-1 김민수\",\"area\":\"attendance\",\"date\":null,\"done\":false},{\"kind\":\"student\",\"label\":\"2-1 김민수\",\"area\":\"none\",\"date\":null,\"done\":false},{\"kind\":\"student\",\"label\":\"2-1 김민수\",\"area\":\"none\",\"date\":null,\"done\":false},{\"kind\":\"task\",\"label\":\"담임에게 알리기\",\"area\":null,\"date\":null,\"done\":false},{\"kind\":\"task\",\"label\":\"보호자 연락\",\"area\":null,\"date\":\"2026-10-02\",\"done\":false}]"
+    },
+    {
+      "name": "A: 보호자 연락 → 10/2(금) 할 일",
+      "ok": true,
+      "detail": "[{\"kind\":\"student\",\"label\":\"2-1 김민수\",\"area\":\"attendance\",\"date\":null,\"done\":false},{\"kind\":\"student\",\"label\":\"2-1 김민수\",\"area\":\"none\",\"date\":null,\"done\":false},{\"kind\":\"student\",\"label\":\"2-1 김민수\",\"area\":\"none\",\"date\":null,\"done\":false},{\"kind\":\"task\",\"label\":\"담임에게 알리기\",\"area\":null,\"date\":null,\"done\":false},{\"kind\":\"task\",\"label\":\"보호자 연락\",\"area\":null,\"date\":\"2026-10-02\",\"done\":false}]"
+    },
+    {
+      "name": "B: 출결로 분류하지 않음",
+      "ok": true,
+      "detail": "[{\"kind\":\"student\",\"label\":\"학생 미지정\",\"area\":\"subject\",\"date\":null,\"done\":false}]"
+    },
+    {
+      "name": "B: 할 일 만들지 않음",
+      "ok": true,
+      "detail": "[{\"kind\":\"student\",\"label\":\"학생 미지정\",\"area\":\"subject\",\"date\":null,\"done\":false}]"
+    },
+    {
+      "name": "C: 10/15 일정, 원문 그대로",
+      "ok": true,
+      "detail": "[{\"kind\":\"event\",\"label\":\"교육장 공감소통 방문\",\"area\":null,\"date\":\"2026-10-15\",\"done\":false}]"
+    },
+    {
+      "name": "C: 요약에 꾸민 말 없음",
+      "ok": true,
+      "detail": "10월 15일 교육장 공감소통 방문"
+    },
+    {
+      "name": "D1: 업무 기록만, 할 일 없음",
+      "ok": true,
+      "detail": "[{\"kind\":\"duty\",\"label\":\"교무기획\",\"area\":null,\"date\":null,\"done\":false}]"
+    },
+    {
+      "name": "D2: 업무 기록 + 기한 있는 할 일(10/2)",
+      "ok": true,
+      "detail": "[{\"kind\":\"task\",\"label\":\"학사력 수정본 교육청에 제출\",\"area\":null,\"date\":\"2026-10-02\",\"done\":false},{\"kind\":\"task\",\"label\":\"교육청에 제출\",\"area\":null,\"date\":\"2026-10-02\",\"done\":false},{\"kind\":\"duty\",\"label\":\"교무기획\",\"area\":null,\"date\":null,\"done\":false}]"
+    },
+    {
+      "name": "AI 초안 생성 + 근거 연결",
+      "ok": true,
+      "detail": "795ms · 근거 밖 표현 0개: "
+    },
+    {
+      "name": "G: 화면에서 즉시 '설치 안 됨'",
+      "ok": true,
+      "detail": "초경량형"
+    },
+    {
+      "name": "G: 모델 파일 제거",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "G: 선택 해제",
+      "ok": true,
+      "detail": "null"
+    },
+    {
+      "name": "G: 쓰던 모델이면 AI 엔진 종료",
+      "ok": true,
+      "detail": "{\"state\":\"stopped\"}"
+    },
+    {
+      "name": "G: 사이드바도 'AI 모델 없음'",
+      "ok": true,
+      "detail": "AI 모델 없음 — 설치하기 기록은 저장됩니다"
+    }
+  ],
+  "metrics": {
+    "model": "qwen2.5-0.5b",
+    "notes": [
+      {
+        "case": "A",
+        "save_ms": 13,
+        "total_ms": 2851,
+        "infer_ms": 2739,
+        "status": "classified",
+        "guard_notes": 2
+      },
+      {
+        "case": "B",
+        "save_ms": 5,
+        "total_ms": 1271,
+        "infer_ms": 1132,
+        "status": "classified",
+        "guard_notes": 1
+      },
+      {
+        "case": "C",
+        "save_ms": 5,
+        "total_ms": 1275,
+        "infer_ms": 1141,
+        "status": "classified",
+        "guard_notes": 1
+      },
+      {
+        "case": "D1",
+        "save_ms": 6,
+        "total_ms": 7900,
+        "infer_ms": 7834,
+        "status": "classified",
+        "guard_notes": 2
+      },
+      {
+        "case": "D2",
+        "save_ms": 5,
+        "total_ms": 5400,
+        "infer_ms": 5159,
+        "status": "classified",
+        "guard_notes": 0
+      }
+    ],
+    "download_seconds": 104,
+    "listening": [
+      "127.0.0.1:7765"
+    ],
+    "memory_llama_server": {
+      "working_set_mb": 552,
+      "private_mb": 218
+    },
+    "memory_app": {
+      "working_set_mb": 43,
+      "private_mb": 13
+    },
+    "draft_ms": 795
+  }
+}

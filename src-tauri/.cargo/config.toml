@@ -1,0 +1,5 @@
+# Windows x64 (llvm-mingw) 빌드 설정
+# - 관리자 권한 없는 학교 PC에서도 돌도록 C 런타임 보조 라이브러리(libunwind)를 EXE 안에 정적으로 넣는다.
+[target.x86_64-pc-windows-gnullvm]
+linker = "x86_64-w64-mingw32-clang"
+rustflags = ["-C", "target-feature=+crt-static"]

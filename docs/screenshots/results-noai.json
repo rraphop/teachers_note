@@ -1,0 +1,117 @@
+[
+  {
+    "name": "첫 화면에서 바로 기록 입력창이 보임",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "AI 모델 없음 안내가 보임",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "원문 즉시 저장",
+    "ok": true,
+    "detail": "19ms"
+  },
+  {
+    "name": "모델 없을 때 미분류 상태와 이유 표시",
+    "ok": true,
+    "detail": "AI 모델이 아직 설치되지 않았습니다. 설정 > AI 모델에서 설치하면 다시 분류할 수 있고, 지금은 '직접 분류'로 정리할 수 있습니다."
+  },
+  {
+    "name": "직접 분류 창에 규칙 제안(학생 관찰·할 일) 채워짐",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "학생 2-1 김민수 연결 + 출결 영역",
+    "ok": true,
+    "detail": "[{\"kind\":\"student\",\"label\":\"2-1 김민수\",\"area\":\"attendance\",\"date\":null,\"done\":false},{\"kind\":\"task\",\"label\":\"담임에게 알리기\",\"area\":null,\"date\":null,\"done\":false},{\"kind\":\"task\",\"label\":\"보호자 연락\",\"area\":null,\"date\":\"2026-10-02\",\"done\":false}]"
+  },
+  {
+    "name": "보호자 연락 = 가까운 금요일(10/2) 기한 할 일",
+    "ok": true,
+    "detail": "{\"kind\":\"task\",\"label\":\"보호자 연락\",\"area\":null,\"date\":\"2026-10-02\",\"done\":false}"
+  },
+  {
+    "name": "할 일에 알림 예약(1일 전 08:30)",
+    "ok": true,
+    "detail": "2026-10-01T08:30:00"
+  },
+  {
+    "name": "시나리오 B 규칙 제안: 출결 아님, 교과",
+    "ok": true,
+    "detail": "[[\"student\",\"subject\"]]"
+  },
+  {
+    "name": "시나리오 B 규칙 제안: 할 일 없음",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "시나리오 C: 일정, 꾸밈 없음, 10/15",
+    "ok": true,
+    "detail": "{\"kind\":\"event\",\"text\":\"교육장 공감소통 방문\",\"students\":[],\"area\":\"none\",\"duty_id\":null,\"date\":\"2026-10-15\",\"time\":null,\"date_expr\":\"10월 15일\",\"approximate\":false,\"remind\":null,\"origin\":\"rule\",\"done\":false,\"edited\":false}"
+  },
+  {
+    "name": "연간: 학사력만 (월간·주간·기록 일정 없음)",
+    "ok": true,
+    "detail": "2학기 중간고사"
+  },
+  {
+    "name": "월간: 학사력+월간+기록 일정 (주간 계획 없음)",
+    "ok": true,
+    "detail": "교과협의회,2학기 중간고사,교육장 공감소통 방문,보호자 연락"
+  },
+  {
+    "name": "주간: 모두 표시",
+    "ok": true,
+    "detail": "3교시 공개수업 준비,교과협의회,2학기 중간고사,교육장 공감소통 방문"
+  },
+  {
+    "name": "날짜 있는 할 일이 주간 달력에 표시",
+    "ok": true,
+    "detail": "보호자 연락"
+  },
+  {
+    "name": "시나리오 D: 업무 기록만, 할 일 없음",
+    "ok": true,
+    "detail": "[\"duty\"]"
+  },
+  {
+    "name": "시나리오 D: 후속조치만 할 일로 (업무 연결)",
+    "ok": true,
+    "detail": "[[\"task\",\"학사력 수정본 교육청에 제출\",\"2026-10-02\"],[\"duty\",\"학사력 수정본 금요일까지 교육청에 제출\",null]]"
+  },
+  {
+    "name": "오늘 화면 순서: 기한 지난 → 오늘 → 앞으로",
+    "ok": true,
+    "detail": "기한 지난 할 일 | 오늘 할 일 | 앞으로 할 일 (2주) | 날짜 없는 할 일"
+  },
+  {
+    "name": "학생 상세에 작성 시각·원문·영역 표시",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "FTS 검색: 공감소통 → 1건",
+    "ok": true,
+    "detail": "1"
+  },
+  {
+    "name": "모델 5단계 + 대안",
+    "ok": true,
+    "detail": "초경량형,기본형,고급형,최고급형,울트라,울트라 (대안)"
+  },
+  {
+    "name": "기기 사양 확인·권장 모델",
+    "ok": true,
+    "detail": "AMD Ryzen 5 7600 6-Core Processor / RAM 31GB / 권장 qwen3.5-9b"
+  },
+  {
+    "name": "설정을 다시 열어도 기기정보를 다시 읽지 않음",
+    "ok": true,
+    "detail": "2026-09-29T01:49:45 → 2026-09-29T01:49:45"
+  }
+]

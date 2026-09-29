@@ -1,0 +1,13 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "메인 창에서 사용하는 최소 권한",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "dialog:allow-ask",
+    "dialog:allow-message",
+    "dialog:allow-open",
+    "clipboard-manager:allow-write-text"
+  ]
+}

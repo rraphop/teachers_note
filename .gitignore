@@ -1,0 +1,12 @@
+node_modules/
+dist/
+dist-portable/
+src-tauri/target/
+src-tauri/gen/
+src-tauri/runtime/
+*.log
+*.gguf
+*.part
+*.db
+*.db-wal
+*.db-shm

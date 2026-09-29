@@ -1,0 +1,615 @@
+{
+  "implementation": "new",
+  "mode": "qwen3-8b",
+  "install": {
+    "how": "import",
+    "seconds": 6
+  },
+  "engine_start_ms": 3767,
+  "memory": {
+    "llama_server": {
+      "working_set_mb": 8407,
+      "private_mb": 4030
+    },
+    "listening": [
+      "127.0.0.1:1204"
+    ],
+    "local_only": true
+  },
+  "set": "eval-holdout",
+  "started": "2026-09-29T14:23:24.763Z",
+  "rows": [
+    {
+      "id": "H1",
+      "raw": "3-1 윤서아 오늘 결석(질병). 보호자 전화 옴.",
+      "status": "classified",
+      "infer_ms": 9077,
+      "wall_ms": 9190,
+      "summary": "3-1 윤서아 오늘 결석(질병), 보호자 전화 옴",
+      "guard_notes": [],
+      "checks": [
+        {
+          "name": "학생 윤서아·attendance",
+          "ok": true,
+          "detail": "윤서아:attendance"
+        },
+        {
+          "name": "할 일 없음",
+          "ok": true,
+          "detail": ""
+        }
+      ],
+      "items": [
+        {
+          "kind": "student",
+          "text": "3-1 윤서아 오늘 결석(질병)",
+          "area": "attendance",
+          "students": [
+            "윤서아"
+          ],
+          "date": "2026-09-29",
+          "time": null,
+          "origin": "ai"
+        }
+      ]
+    },
+    {
+      "id": "H2",
+      "raw": "2-4 오지훈 과학 실험 보고서 완성도 높음.",
+      "status": "classified",
+      "infer_ms": 9971,
+      "wall_ms": 10154,
+      "summary": "2-4 오지훈 과학 실험 보고서 완성도 높음",
+      "guard_notes": [],
+      "checks": [
+        {
+          "name": "학생 오지훈·subject",
+          "ok": true,
+          "detail": "오지훈:subject"
+        },
+        {
+          "name": "출결 아님",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "할 일 없음",
+          "ok": true,
+          "detail": ""
+        }
+      ],
+      "items": [
+        {
+          "kind": "student",
+          "text": "2-4 오지훈 과학 실험 보고서 완성도 높음",
+          "area": "subject",
+          "students": [
+            "오지훈"
+          ],
+          "date": "2026-09-29",
+          "time": null,
+          "origin": "ai"
+        }
+      ]
+    },
+    {
+      "id": "H3",
+      "raw": "다음 달 3일 학부모 총회",
+      "status": "classified",
+      "infer_ms": 7493,
+      "wall_ms": 7605,
+      "summary": "학부모 총회",
+      "guard_notes": [],
+      "checks": [
+        {
+          "name": "할 일 없음",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "일정 '학부모 총회'@2026-10-03",
+          "ok": true,
+          "detail": "학부모 총회@2026-10-03 "
+        }
+      ],
+      "items": [
+        {
+          "kind": "event",
+          "text": "학부모 총회",
+          "area": "none",
+          "students": [],
+          "date": "2026-10-03",
+          "time": null,
+          "origin": "ai"
+        }
+      ]
+    },
+    {
+      "id": "H4",
+      "raw": "내일까지 방과후 신청서 걷기",
+      "status": "classified",
+      "infer_ms": 6969,
+      "wall_ms": 7275,
+      "summary": "방과후 신청서 걷기",
+      "guard_notes": [],
+      "checks": [
+        {
+          "name": "출결 아님",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "할 일 '신청서'@2026-09-30",
+          "ok": true,
+          "detail": "방과후 신청서 걷기@2026-09-30"
+        },
+        {
+          "name": "일정 없음",
+          "ok": true,
+          "detail": ""
+        }
+      ],
+      "items": [
+        {
+          "kind": "task",
+          "text": "방과후 신청서 걷기",
+          "area": "none",
+          "students": [],
+          "date": "2026-09-30",
+          "time": null,
+          "origin": "ai"
+        }
+      ]
+    },
+    {
+      "id": "H5",
+      "raw": "1-2 서민준 친구를 괴롭혀 학교폭력 사안 접수. 금요일 오후 2시 전담기구 회의.",
+      "status": "classified",
+      "infer_ms": 15437,
+      "wall_ms": 15521,
+      "summary": "1-2 서민준 학교폭력 사안, 전담기구 회의",
+      "guard_notes": [],
+      "checks": [
+        {
+          "name": "학생 서민준·behavior",
+          "ok": true,
+          "detail": "서민준:behavior"
+        },
+        {
+          "name": "출결 아님",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "일정 '회의'@2026-10-02 14:00",
+          "ok": true,
+          "detail": "전담기구 회의@2026-10-02 14:00"
+        }
+      ],
+      "items": [
+        {
+          "kind": "student",
+          "text": "1-2 서민준 친구를 괴롭혀 학교폭력 사안 접수",
+          "area": "behavior",
+          "students": [
+            "서민준"
+          ],
+          "date": "2026-09-29",
+          "time": null,
+          "origin": "ai"
+        },
+        {
+          "kind": "event",
+          "text": "전담기구 회의",
+          "area": "none",
+          "students": [],
+          "date": "2026-10-02",
+          "time": "14:00",
+          "origin": "ai"
+        }
+      ]
+    },
+    {
+      "id": "H6",
+      "raw": "2-3 이서연 교외체험학습 신청. 10월 12일부터 3일간.",
+      "status": "classified",
+      "infer_ms": 10608,
+      "wall_ms": 10770,
+      "summary": "2-3 이서연 교외체험학습 신청",
+      "guard_notes": [
+        "\"2-3 이서연 교외체험학습 신청\"에 날짜가 없어 일정으로 만들지 않았습니다.",
+        "원문의 출결 사실을 출결특기사항 자료로 연결했습니다."
+      ],
+      "checks": [
+        {
+          "name": "학생 이서연·attendance",
+          "ok": true,
+          "detail": "이서연:subject,이서연:attendance"
+        }
+      ],
+      "items": [
+        {
+          "kind": "student",
+          "text": "2-3 이서연 교외체험학습 신청",
+          "area": "subject",
+          "students": [
+            "이서연"
+          ],
+          "date": "2026-09-29",
+          "time": null,
+          "origin": "ai"
+        },
+        {
+          "kind": "student",
+          "text": "2-3 이서연 교외체험학습 신청",
+          "area": "attendance",
+          "students": [
+            "이서연"
+          ],
+          "date": "2026-09-29",
+          "time": null,
+          "origin": "ai"
+        },
+        {
+          "kind": "event",
+          "text": "3일간",
+          "area": "none",
+          "students": [],
+          "date": "2026-10-12",
+          "time": null,
+          "origin": "ai"
+        }
+      ]
+    },
+    {
+      "id": "H7",
+      "raw": "수업일수 확인해서 학사력에 반영하기.",
+      "status": "classified",
+      "infer_ms": 7237,
+      "wall_ms": 7286,
+      "summary": "수업일수 확인해서 학사력에 반영하기",
+      "guard_notes": [],
+      "checks": [
+        {
+          "name": "출결 아님",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "할 일 '반영'",
+          "ok": true,
+          "detail": "수업일수 확인해서 학사력에 반영하기@-"
+        },
+        {
+          "name": "업무 기록",
+          "ok": true,
+          "detail": ""
+        }
+      ],
+      "items": [
+        {
+          "kind": "task",
+          "text": "수업일수 확인해서 학사력에 반영하기",
+          "area": "none",
+          "students": [],
+          "date": null,
+          "time": null,
+          "origin": "ai"
+        },
+        {
+          "kind": "duty",
+          "text": "수업일수 확인해서 학사력에 반영하기",
+          "area": "none",
+          "students": [],
+          "date": null,
+          "time": null,
+          "origin": "ai"
+        }
+      ]
+    },
+    {
+      "id": "H8",
+      "raw": "2-1 김민수 영어 발표 때 목소리가 작았지만 끝까지 해냄.",
+      "status": "classified",
+      "infer_ms": 9995,
+      "wall_ms": 10107,
+      "summary": "2-1 김민수 영어 발표 때 목소리 작지만 끝까지 해냄",
+      "guard_notes": [],
+      "checks": [
+        {
+          "name": "학생 김민수·subject",
+          "ok": true,
+          "detail": "김민수:subject"
+        },
+        {
+          "name": "출결 아님",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "할 일 없음",
+          "ok": true,
+          "detail": ""
+        }
+      ],
+      "items": [
+        {
+          "kind": "student",
+          "text": "2-1 김민수 영어 발표 때 목소리가 작았지만 끝까지 해냄",
+          "area": "subject",
+          "students": [
+            "김민수"
+          ],
+          "date": "2026-09-29",
+          "time": null,
+          "origin": "ai"
+        }
+      ]
+    },
+    {
+      "id": "H9",
+      "raw": "중간고사 문항 출제 원안 10월 7일까지 제출.",
+      "status": "classified",
+      "infer_ms": 9933,
+      "wall_ms": 10155,
+      "summary": "중간고사 문항 출제 원안 10월 7일 제출",
+      "guard_notes": [],
+      "checks": [
+        {
+          "name": "할 일 '원안'@2026-10-07",
+          "ok": true,
+          "detail": "중간고사 문항 출제 원안 제출@2026-10-07"
+        },
+        {
+          "name": "일정 없음",
+          "ok": true,
+          "detail": ""
+        }
+      ],
+      "items": [
+        {
+          "kind": "task",
+          "text": "중간고사 문항 출제 원안 제출",
+          "area": "none",
+          "students": [],
+          "date": "2026-10-07",
+          "time": null,
+          "origin": "ai"
+        }
+      ]
+    },
+    {
+      "id": "H10",
+      "raw": "학급 청소 상태 불량. 청소 당번표 다시 만들기.",
+      "status": "classified",
+      "infer_ms": 12326,
+      "wall_ms": 12401,
+      "summary": "학급 청소 상태 불량, 청소 당번표 다시 만들기",
+      "guard_notes": [
+        "\"청소 당번표 다시 만들기\"에는 해야 할 행동이나 기한이 없어 할 일로 만들지 않았습니다."
+      ],
+      "checks": [
+        {
+          "name": "출결 아님",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "할 일 '당번표'",
+          "ok": false,
+          "detail": "(없음)"
+        },
+        {
+          "name": "일정 없음",
+          "ok": true,
+          "detail": ""
+        }
+      ],
+      "items": []
+    },
+    {
+      "id": "H11",
+      "raw": "1-1 최유진 봉사 시간 10시간 채움.",
+      "status": "classified",
+      "infer_ms": 9278,
+      "wall_ms": 9474,
+      "summary": "1-1 최유진 봉사 시간 10시간 채움",
+      "guard_notes": [],
+      "checks": [
+        {
+          "name": "학생 최유진·volunteer",
+          "ok": true,
+          "detail": "최유진:volunteer"
+        },
+        {
+          "name": "출결 아님",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "할 일 없음",
+          "ok": true,
+          "detail": ""
+        }
+      ],
+      "items": [
+        {
+          "kind": "student",
+          "text": "1-1 최유진 봉사 시간 10시간 채움",
+          "area": "volunteer",
+          "students": [
+            "최유진"
+          ],
+          "date": "2026-09-29",
+          "time": null,
+          "origin": "ai"
+        }
+      ]
+    },
+    {
+      "id": "H12",
+      "raw": "3-3 조하준 진로체험 보고서 미제출.",
+      "status": "classified",
+      "infer_ms": 8334,
+      "wall_ms": 8574,
+      "summary": "3-3 조하준 진로체험 보고서 미제출",
+      "guard_notes": [],
+      "checks": [
+        {
+          "name": "학생 조하준·career",
+          "ok": false,
+          "detail": "조하준:subject"
+        },
+        {
+          "name": "출결 아님",
+          "ok": true,
+          "detail": ""
+        }
+      ],
+      "items": [
+        {
+          "kind": "student",
+          "text": "3-3 조하준 진로체험 보고서 미제출",
+          "area": "subject",
+          "students": [
+            "조하준"
+          ],
+          "date": "2026-09-29",
+          "time": null,
+          "origin": "ai"
+        }
+      ]
+    },
+    {
+      "id": "H13",
+      "raw": "오늘 5교시 전교생 소방 대피 훈련.",
+      "status": "classified",
+      "infer_ms": 9152,
+      "wall_ms": 9220,
+      "summary": "오늘 5교시 전교생 소방 대피 훈련",
+      "guard_notes": [],
+      "checks": [
+        {
+          "name": "출결 아님",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "학생 관찰 없음",
+          "ok": true,
+          "detail": "0"
+        },
+        {
+          "name": "일정 '대피 훈련'@2026-09-29",
+          "ok": true,
+          "detail": "5교시 전교생 소방 대피 훈련@2026-09-29 "
+        }
+      ],
+      "items": [
+        {
+          "kind": "event",
+          "text": "5교시 전교생 소방 대피 훈련",
+          "area": "none",
+          "students": [],
+          "date": "2026-09-29",
+          "time": null,
+          "origin": "ai"
+        }
+      ]
+    },
+    {
+      "id": "H14",
+      "raw": "2-2 한지민 3~4교시 결과(보건실).",
+      "status": "classified",
+      "infer_ms": 8714,
+      "wall_ms": 8893,
+      "summary": "2-2 한지민 3~4교시 결과(보건실)",
+      "guard_notes": [
+        "원문의 출결 사실을 출결특기사항 자료로 연결했습니다."
+      ],
+      "checks": [
+        {
+          "name": "학생 한지민·attendance",
+          "ok": true,
+          "detail": "한지민:subject,한지민:attendance"
+        },
+        {
+          "name": "할 일 없음",
+          "ok": true,
+          "detail": ""
+        }
+      ],
+      "items": [
+        {
+          "kind": "student",
+          "text": "2-2 한지민 3~4교시 결과(보건실)",
+          "area": "subject",
+          "students": [
+            "한지민"
+          ],
+          "date": "2026-09-29",
+          "time": null,
+          "origin": "ai"
+        },
+        {
+          "kind": "student",
+          "text": "2-2 한지민 3~4교시 결과(보건실)",
+          "area": "attendance",
+          "students": [
+            "한지민"
+          ],
+          "date": "2026-09-29",
+          "time": null,
+          "origin": "ai"
+        }
+      ]
+    },
+    {
+      "id": "H15",
+      "raw": "교장선생님께 학교 설명회 자료 결재 받기.",
+      "status": "classified",
+      "infer_ms": 7162,
+      "wall_ms": 7324,
+      "summary": "학교 설명회 자료 결재 받기",
+      "guard_notes": [],
+      "checks": [
+        {
+          "name": "출결 아님",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "할 일 '결재'",
+          "ok": true,
+          "detail": "교장선생님께 학교 설명회 자료 결재 받기@-"
+        },
+        {
+          "name": "일정 없음",
+          "ok": true,
+          "detail": ""
+        }
+      ],
+      "items": [
+        {
+          "kind": "task",
+          "text": "교장선생님께 학교 설명회 자료 결재 받기",
+          "area": "none",
+          "students": [],
+          "date": null,
+          "time": null,
+          "origin": "ai"
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "passed": 36,
+    "total": 38,
+    "rate": 94.7,
+    "perfect_notes": 13,
+    "notes": 15,
+    "avg_infer_ms": 9446,
+    "max_infer_ms": 15437,
+    "false_attendance_notes": 0
+  }
+}
