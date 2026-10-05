@@ -1,0 +1,22 @@
+[
+  {
+    "name": "실행기로 켜짐: 파일 위치를 앎",
+    "ok": true,
+    "detail": "C:\\Users\\rraph\\AppData\\Local\\Temp\\tn-single-e2e-c1a950eb953d42eb98b3bb83f884132c\\desktop\\교무수첩(0.62).exe"
+  },
+  {
+    "name": "풀린 위치: program\\0.6.2",
+    "ok": true,
+    "detail": "C:\\Users\\rraph\\AppData\\Local\\Temp\\tn-single-e2e-c1a950eb953d42eb98b3bb83f884132c\\data\\program\\0.6.2"
+  },
+  {
+    "name": "덮어쓴 뒤에도 기록·학생 그대로",
+    "ok": true,
+    "detail": "기록 1, 학생 1"
+  },
+  {
+    "name": "지난 버전 폴더는 정리되고 새 버전 폴더만 남음",
+    "ok": true,
+    "detail": "0.6.2"
+  }
+]

@@ -11,12 +11,13 @@ use crate::llm;
 use crate::models::{self, CatalogModel, DlProgress, Finish};
 use crate::notes::{self, ApplyMode, NoteDto, NoteFilter};
 use crate::notify;
-use crate::records::{self, AreaBlock, DraftCheck, DraftDto, ObservationDto, ObservationInput};
+use crate::records::{self, DraftCheck, DraftDto, ObservationDto, ObservationInput};
 use crate::runtime::{self, RuntimeState};
 use crate::schedule::{self, CalendarItem, DutyLogDto, DutyLogInput, EventDto, EventInput, TaskDto, TaskFilter, TaskInput, TodayOverview};
 use crate::search::{self, SearchQuery, SearchResult};
 use crate::settings::{self, AppSettings};
 use crate::students::{self, ClassDto, ImportResult, StudentDto, StudentInput};
+use crate::timetable;
 use crate::util;
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
@@ -39,14 +40,42 @@ async fn blocking<T: Send + 'static>(f: impl FnOnce() -> AppResult<T> + Send + '
 #[tauri::command]
 pub async fn create_note(state: S<'_>, raw: String) -> AppResult<NoteDto> {
     let now = util::now();
-    let (id, note) = state.db.with(|c| {
+    let (id, note, tt) = state.db.with(|c| {
         let id = notes::create_note(c, &raw, now)?;
-        Ok((id, notes::get_note(c, id)?))
+        // 시간표 문장은 AI 를 기다리지 않고 규칙으로 바로 시간표에 반영한다
+        let tt = crate::ttinput::apply_for_note(c, id, now).unwrap_or_else(|e| {
+            crate::logging::warn(&format!("시간표 반영 실패: note={id} {e}"));
+            Default::default()
+        });
+        if tt.covers_all {
+            notes::mark_rule_classified(c, id, now)?;
+        }
+        Ok((id, notes::get_note(c, id)?, tt))
     })?;
-    crate::logging::info(&format!("기록 저장: note={id}"));
+    crate::logging::info(&format!("기록 저장: note={id} 시간표 {}/{}/{}", tt.applied, tt.conflicts, tt.changes));
     state.changed("notes");
-    state.enqueue(id, false);
+    if tt.statements > 0 {
+        state.changed("timetable");
+    }
+    // 기록 전체가 시간표 문장이면 AI 분류가 필요 없다
+    if !tt.covers_all {
+        state.enqueue(id, false);
+    }
     Ok(note)
+}
+
+#[tauri::command]
+pub async fn tt_conflicts(state: S<'_>) -> AppResult<Vec<crate::ttinput::TtEntry>> {
+    state.db.with(|c| crate::ttinput::conflicts(c))
+}
+
+/// 다른 수업이 있던 시간표 칸: 바꾸기 / 그대로 두기
+#[tauri::command]
+pub async fn resolve_tt_conflict(state: S<'_>, id: i64, replace: bool) -> AppResult<crate::ttinput::TtEntry> {
+    let e = state.db.with(|c| crate::ttinput::resolve_conflict(c, id, replace, util::now()))?;
+    state.changed("timetable");
+    state.changed("notes");
+    Ok(e)
 }
 
 #[tauri::command]
@@ -98,10 +127,16 @@ pub async fn get_note_detail(state: S<'_>, id: i64) -> AppResult<NoteDetail> {
 #[tauri::command]
 pub async fn update_note_raw(state: S<'_>, id: i64, raw: String) -> AppResult<NoteDto> {
     let n = state.db.with(|c| {
-        notes::update_raw(c, id, &raw, util::now())?;
+        let now = util::now();
+        notes::update_raw(c, id, &raw, now)?;
+        // 고친 원문의 시간표 문장을 다시 반영한다
+        if let Err(e) = crate::ttinput::apply_for_note(c, id, now) {
+            crate::logging::warn(&format!("시간표 반영 실패: note={id} {e}"));
+        }
         notes::get_note(c, id)
     })?;
     state.changed("notes");
+    state.changed("timetable");
     Ok(n)
 }
 
@@ -110,6 +145,14 @@ pub async fn delete_note(state: S<'_>, id: i64) -> AppResult<()> {
     state.db.with(|c| notes::delete_note(c, id))?;
     crate::logging::info(&format!("기록 삭제: note={id}"));
     state.changed("all");
+    Ok(())
+}
+
+/// 기록을 일반 기록 / 정리된 업무기록으로 옮긴다 (track: "general" | "work" | null = AI 분류를 따름)
+#[tauri::command]
+pub async fn set_note_track(state: S<'_>, id: i64, track: Option<String>) -> AppResult<()> {
+    state.db.with(|c| notes::set_track(c, id, track.as_deref(), util::now()))?;
+    state.changed("notes");
     Ok(())
 }
 
@@ -252,11 +295,70 @@ pub async fn import_roster(state: S<'_>, text: String) -> AppResult<ImportResult
     Ok(r)
 }
 
+/// 나이스 명렬표 엑셀 가져오기 (여러 파일)
+#[tauri::command]
+pub async fn import_neis_roster(state: S<'_>, paths: Vec<String>) -> AppResult<crate::neis_roster::NeisImportResult> {
+    if paths.is_empty() {
+        return Err(AppError::invalid("가져올 파일을 골라 주세요."));
+    }
+    let st = state.inner().clone();
+    let r = blocking(move || {
+        st.db.with(|c| {
+            let store_rrn = settings::load(c)?.store_rrn;
+            crate::neis_roster::import_files(c, &paths, store_rrn, util::now())
+        })
+    })
+    .await?;
+    state.changed("students");
+    Ok(r)
+}
+
 // ───────────────────────── 학생부 자료 ─────────────────────────
 
+// ───────────────────────── 오늘 업무 요약 ─────────────────────────
+
+/// 오늘 업무 요약 (같은 사실로 만든 AI 요약이 있으면 그것, 없으면 규칙 요약)
 #[tauri::command]
-pub async fn record_overview(state: S<'_>, student_id: i64) -> AppResult<Vec<AreaBlock>> {
-    state.db.with(|c| records::record_overview(c, student_id))
+pub async fn today_briefing(state: S<'_>) -> AppResult<crate::briefing::Briefing> {
+    state.db.with(|c| crate::briefing::load(c, util::now()))
+}
+
+/// [새로고침]: AI로 다시 요약한다 (AI 모델이 있을 때). 쓸 수 있는 줄이 없으면 규칙 요약을 그대로 둔다.
+#[tauri::command]
+pub async fn refresh_briefing(state: S<'_>) -> AppResult<crate::briefing::Briefing> {
+    let st = state.inner().clone();
+    blocking(move || {
+        let now = util::now();
+        let f = st.db.with(|c| crate::briefing::facts(c, now))?;
+        if f.is_empty() {
+            return st.db.with(|c| crate::briefing::load(c, now));
+        }
+        let cfg = app::require_model(&st)?;
+        let out = st
+            .runtime
+            .chat(&cfg, crate::briefing::ai_body(&f), app::infer_timeout(&cfg))
+            .map_err(|e| AppError::msg(format!("AI 요약을 만들지 못했습니다: {}", e.message)))?;
+        let Some(lines) = crate::briefing::guard_ai(&out, &f) else {
+            return Err(AppError::msg("AI 요약이 오늘의 사실과 맞지 않아 쓰지 않았습니다. 규칙으로 만든 요약을 그대로 보여 줍니다."));
+        };
+        st.db.with(|c| {
+            crate::briefing::store_ai(c, now, &f, &lines)?;
+            crate::briefing::load(c, now)
+        })
+    })
+    .await
+}
+
+/// 학생 한 명의 학생부 자료 (영역 7개, 교과·자유학기는 과목·활동별 칸)
+#[tauri::command]
+pub async fn student_record(state: S<'_>, student_id: i64) -> AppResult<Vec<records::RecordTab>> {
+    state.db.with(|c| records::student_record(c, student_id))
+}
+
+/// 학급별로 남은 학생: 칸 하나의 학생별 상태 (참고자료만 / 초안 / 최종안)
+#[tauri::command]
+pub async fn record_status(state: S<'_>, area: String, subject: String) -> AppResult<Vec<records::StatusRow>> {
+    state.db.with(|c| records::record_status(c, &area, &subject))
 }
 
 #[tauri::command]
@@ -285,84 +387,76 @@ pub async fn delete_observation(state: S<'_>, id: i64) -> AppResult<()> {
     Ok(())
 }
 
-fn source_texts(c: &rusqlite::Connection, student_id: i64, ids: &[i64]) -> AppResult<Vec<ObservationDto>> {
-    let all = records::student_observations(c, student_id)?;
-    Ok(all.into_iter().filter(|o| ids.contains(&o.id)).collect())
-}
-
+/// 참고자료를 날짜순으로 모아 칸에 붙인다 (문장을 새로 만들지 않음)
 #[tauri::command]
-pub async fn create_draft_template(state: S<'_>, student_id: i64, area: String, observation_ids: Vec<i64>) -> AppResult<DraftDto> {
-    let d = state.db.with(|c| {
-        let obs = source_texts(c, student_id, &observation_ids)?;
-        if obs.is_empty() {
-            return Err(AppError::invalid("초안에 쓸 관찰 기록을 하나 이상 골라 주세요."));
+pub async fn record_gather(state: S<'_>, student_id: i64, area: String, subject: String) -> AppResult<records::RecordTab> {
+    let tab = state.db.with(|c| {
+        let refs = records::tab_refs(c, student_id, &area, &subject)?;
+        if refs.is_empty() {
+            return Err(AppError::invalid("이 칸에 쓸 참고자료가 없습니다."));
         }
-        let body = records::template_body(&obs);
-        let ids: Vec<i64> = obs.iter().map(|o| o.id).collect();
-        let id = records::create_draft(c, student_id, &area, &ids, &body, "template", util::now())?;
-        records::get_draft(c, id)
+        let body = records::template_body(&refs);
+        let ids: Vec<i64> = refs.iter().map(|o| o.id).collect();
+        records::create_draft(c, student_id, &area, &subject, &ids, &body, "template", util::now())?;
+        records::record_tab(c, student_id, &area, &subject)
     })?;
     state.changed("records");
-    Ok(d)
+    Ok(tab)
 }
 
+/// AI 초안: 이 칸의 (빼지 않은) 참고자료만 근거로 쓴다
 #[tauri::command]
-pub async fn generate_draft_ai(state: S<'_>, student_id: i64, area: String, observation_ids: Vec<i64>) -> AppResult<DraftDto> {
+pub async fn record_ai_draft(state: S<'_>, student_id: i64, area: String, subject: String) -> AppResult<records::RecordTab> {
     let st = state.inner().clone();
-    let d = blocking(move || {
-        let obs = st.db.with(|c| source_texts(c, student_id, &observation_ids))?;
-        if obs.is_empty() {
-            return Err(AppError::invalid("초안에 쓸 관찰 기록을 하나 이상 골라 주세요."));
+    let tab = blocking(move || {
+        let refs = st.db.with(|c| records::tab_refs(c, student_id, &area, &subject))?;
+        if refs.is_empty() {
+            return Err(AppError::invalid("이 칸에 쓸 참고자료가 없습니다. 기록을 더 쓰거나 다른 영역의 참고자료를 이 영역으로 옮겨 주세요."));
         }
         let cfg = app::require_model(&st)?;
         let area_v = Area::parse(&area);
-        let lines: Vec<String> = obs.iter().map(|o| crate::text::tidy(&o.content)).collect();
+        let lines: Vec<String> = refs.iter().map(|o| crate::text::tidy(&o.content)).collect();
         let out = st
             .runtime
-            .chat(&cfg, llm::draft_body(area_v, &lines), app::infer_timeout(&cfg))
+            .chat(&cfg, llm::draft_body(area_v, &subject, &lines), app::infer_timeout(&cfg))
             .map_err(|e| AppError::msg(format!("AI 초안을 만들지 못했습니다: {}", e.message)))?;
         let body = llm::clean_draft(&out);
         if body.trim().is_empty() {
-            return Err(AppError::msg("AI가 빈 초안을 돌려주었습니다. 다시 시도하거나 기본 초안을 쓰세요."));
+            return Err(AppError::msg("AI가 빈 초안을 돌려주었습니다. 다시 시도하거나 ‘참고자료 모아 붙이기’를 쓰세요."));
         }
-        let ids: Vec<i64> = obs.iter().map(|o| o.id).collect();
+        let ids: Vec<i64> = refs.iter().map(|o| o.id).collect();
         st.db.with(|c| {
-            let id = records::create_draft(c, student_id, &area, &ids, &body, "ai", util::now())?;
-            records::get_draft(c, id)
+            records::create_draft(c, student_id, &area, &subject, &ids, &body, "ai", util::now())?;
+            records::record_tab(c, student_id, &area, &subject)
         })
     })
     .await?;
     state.changed("records");
-    Ok(d)
+    Ok(tab)
 }
 
+/// 칸 글 저장 (final = 최종안으로 표시). 빈 글이면 칸의 글을 지운다.
 #[tauri::command]
-pub async fn update_draft(state: S<'_>, id: i64, body: String, reviewed: bool) -> AppResult<DraftDto> {
-    let d = state.db.with(|c| {
-        records::update_draft(c, id, &body, reviewed, util::now())?;
-        records::get_draft(c, id)
+pub async fn save_record_text(state: S<'_>, student_id: i64, area: String, subject: String, body: String, final_text: bool) -> AppResult<records::RecordTab> {
+    let tab = state.db.with(|c| {
+        records::save_record_text(c, student_id, &area, &subject, &body, final_text, util::now())?;
+        records::record_tab(c, student_id, &area, &subject)
     })?;
     state.changed("records");
-    Ok(d)
+    Ok(tab)
 }
 
 #[tauri::command]
-pub async fn delete_draft(state: S<'_>, id: i64) -> AppResult<()> {
-    state.db.with(|c| records::delete_draft(c, id))?;
-    state.changed("records");
-    Ok(())
+pub async fn check_record_text(state: S<'_>, student_id: i64, area: String, subject: String, body: String) -> AppResult<DraftCheck> {
+    state.db.with(|c| records::check_record_text(c, student_id, &area, &subject, &body))
 }
 
+/// 학급(또는 전체) 최종안을 엑셀 파일로
 #[tauri::command]
-pub async fn check_draft_text(state: S<'_>, draft_id: i64, body: String) -> AppResult<DraftCheck> {
-    state.db.with(|c| {
-        let d = records::get_draft(c, draft_id)?;
-        let obs = source_texts(c, d.student_id, &d.source_ids)?;
-        let texts: Vec<String> = obs.into_iter().map(|o| o.content).collect();
-        Ok(records::check_draft(&body, &texts))
-    })
+pub async fn export_record_finals(state: S<'_>, class_id: Option<i64>, path: String) -> AppResult<records::FinalsExport> {
+    let st = state.inner().clone();
+    blocking(move || st.db.with(|c| records::export_finals(c, class_id, std::path::Path::new(&path)))).await
 }
-
 // ───────────────────────── 업무 ─────────────────────────
 
 #[tauri::command]
@@ -486,7 +580,10 @@ pub async fn get_duty_log(state: S<'_>, id: i64) -> AppResult<DutyLogDto> {
 
 #[tauri::command]
 pub async fn calendar(state: S<'_>, view: String, start: String, end: String) -> AppResult<Vec<CalendarItem>> {
-    state.db.with(|c| schedule::calendar(c, &view, &start, &end))
+    state.db.with(|c| {
+        let birthdays = settings::load(c)?.birthdays_on_calendar;
+        schedule::calendar(c, &view, &start, &end, birthdays)
+    })
 }
 
 #[tauri::command]
@@ -526,7 +623,112 @@ pub async fn delete_event(state: S<'_>, id: i64) -> AppResult<()> {
 #[tauri::command]
 pub async fn today_overview(state: S<'_>) -> AppResult<TodayOverview> {
     let now = util::now();
-    state.db.with(|c| schedule::today_overview(c, now.date(), now))
+    state.db.with(|c| {
+        let birthdays = settings::load(c)?.birthdays_on_calendar;
+        schedule::today_overview(c, now.date(), now, birthdays)
+    })
+}
+
+// ───────────────────────── 학급명렬표 ─────────────────────────
+
+#[tauri::command]
+pub async fn set_student_field(state: S<'_>, id: i64, field: String, value: String) -> AppResult<StudentDto> {
+    let s = state.db.with(|c| {
+        students::set_roster_field(c, id, &field, &value, util::now())?;
+        students::get_student(c, id)
+    })?;
+    state.changed("students");
+    Ok(s)
+}
+
+// ───────────────────────── 시간표 ─────────────────────────
+
+#[derive(Serialize)]
+pub struct SemesterInfo {
+    pub school_year: i32,
+    pub semester: u8,
+}
+
+/// 시간표 화면의 기본 학기. 2월에 새 학년도를 시작했으면 새 학년도 1학기를 연다.
+#[tauri::command]
+pub async fn current_semester(state: S<'_>) -> AppResult<SemesterInfo> {
+    let today = util::now().date();
+    let (school_year, semester) = state.db.with(|c| Ok(timetable::active_semester(c, today)))?;
+    Ok(SemesterInfo { school_year, semester })
+}
+
+#[tauri::command]
+pub async fn get_bell(state: S<'_>, year: i32, semester: u8) -> AppResult<timetable::BellSchedule> {
+    state.db.with(|c| timetable::get_bell(c, year, semester))
+}
+
+/// 저장하지 않고 교시 시각만 계산해 미리 보여 준다
+#[tauri::command]
+pub async fn compute_bell(config: timetable::BellConfig) -> AppResult<Vec<timetable::PeriodSlot>> {
+    timetable::compute_periods(&config)
+}
+
+#[tauri::command]
+pub async fn save_bell(
+    state: S<'_>,
+    year: i32,
+    semester: u8,
+    config: timetable::BellConfig,
+    periods: Option<Vec<timetable::PeriodSlot>>,
+) -> AppResult<timetable::BellSchedule> {
+    let b = state.db.with(|c| timetable::save_bell(c, year, semester, &config, periods, util::now()))?;
+    state.changed("timetable");
+    Ok(b)
+}
+
+#[tauri::command]
+pub async fn get_timetable(state: S<'_>, year: i32, semester: u8, kind: String, class_label: Option<String>) -> AppResult<timetable::TimetableView> {
+    state.db.with(|c| timetable::get_timetable(c, year, semester, &kind, class_label.as_deref().unwrap_or("")))
+}
+
+#[tauri::command]
+pub async fn class_timetables(state: S<'_>, year: i32, semester: u8) -> AppResult<Vec<String>> {
+    state.db.with(|c| timetable::class_timetable_labels(c, year, semester))
+}
+
+#[tauri::command]
+pub async fn set_timetable_cell(
+    state: S<'_>,
+    year: i32,
+    semester: u8,
+    kind: String,
+    class_label: Option<String>,
+    cell: timetable::Cell,
+) -> AppResult<()> {
+    state.db.with(|c| timetable::set_cell(c, year, semester, &kind, class_label.as_deref().unwrap_or(""), &cell, util::now()))?;
+    state.changed("timetable");
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn add_school_row(state: S<'_>, year: i32, label: String) -> AppResult<String> {
+    let l = state.db.with(|c| timetable::add_school_row(c, year, &label))?;
+    state.changed("timetable");
+    Ok(l)
+}
+
+#[tauri::command]
+pub async fn delete_timetable(state: S<'_>, year: i32, semester: u8, kind: String, class_label: Option<String>) -> AppResult<()> {
+    state.db.with(|c| timetable::delete_timetable(c, year, semester, &kind, class_label.as_deref().unwrap_or("")))?;
+    state.changed("timetable");
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn copy_semester(state: S<'_>, from_year: i32, from_semester: u8, to_year: i32, to_semester: u8) -> AppResult<timetable::CopyResult> {
+    let r = state.db.with(|c| timetable::copy_semester(c, (from_year, from_semester), (to_year, to_semester), util::now()))?;
+    state.changed("timetable");
+    Ok(r)
+}
+
+#[tauri::command]
+pub async fn today_timetable(state: S<'_>) -> AppResult<timetable::TodayTimetable> {
+    state.db.with(|c| timetable::today(c, util::now()))
 }
 
 #[tauri::command]
@@ -846,6 +1048,8 @@ pub struct AppInfo {
     pub data_dir: String,
     pub models_dir: String,
     pub exe_dir: String,
+    /// 파일 하나 실행기로 켰으면 그 파일 (바탕화면 등)
+    pub launcher_path: Option<String>,
     pub db_path: String,
     pub autostart: bool,
     pub wipe_pending: bool,
@@ -859,6 +1063,7 @@ pub async fn app_info(state: S<'_>) -> AppResult<AppInfo> {
         data_dir: state.paths.root.display().to_string(),
         models_dir: state.paths.models_dir.display().to_string(),
         exe_dir: crate::paths::exe_dir().display().to_string(),
+        launcher_path: crate::paths::launcher_path().map(|p| p.display().to_string()),
         db_path: state.paths.db_path.display().to_string(),
         autostart: notify::autostart_target().is_some(),
         wipe_pending: state.paths.wipe_marker.exists(),
@@ -876,20 +1081,201 @@ pub async fn update_settings(state: S<'_>, value: AppSettings) -> AppResult<AppS
     let s = state.db.with(|c| {
         let cur = settings::load(c)?;
         let mut next = value.clone();
-        // 모델 선택은 select_model 로만 바꾼다
-        next.selected_model = cur.selected_model;
+        // 모델 선택은 select_model 로만, 항상 위는 set_always_on_top 으로만 바꾼다 (화면에 남은 예전 값으로 덮어쓰지 않게)
+        next.selected_model = cur.selected_model.clone();
+        next.always_on_top = cur.always_on_top;
+        next.window_transparency = cur.window_transparency;
         settings::save(c, &next)?;
-        settings::load(c)
+        let saved = settings::load(c)?;
+        let now = util::now();
+        // 학교를 바꾸면 예전 학교의 학급 목록을 버린다
+        if saved.school.as_ref().map(|x| &x.code) != cur.school.as_ref().map(|x| &x.code) {
+            c.execute("DELETE FROM settings WHERE key='neis_classes'", [])?;
+        }
+        // 내 과목·뺄 학급을 바꾸면 받아 둔 학교 시간표로 개인 시간표를 다시 만든다 (인터넷 필요 없음)
+        if saved.my_subjects != cur.my_subjects || saved.my_classes_off != cur.my_classes_off {
+            let (y, sem) = crate::timetable::active_semester(c, now.date());
+            crate::neis::rebuild_personal(c, &saved, y, sem, now)?;
+        }
+        // 학사력 종류 규칙을 바꾸면 이미 있는 학사력에도 적용한다
+        if saved.day_rules != cur.day_rules {
+            crate::neis::reclassify_days(c, &saved.day_rules)?;
+        }
+        Ok(saved)
     })?;
+    state.changed("all");
     (state.emit)("settings-changed", json!({}));
     Ok(s)
 }
 
+// ───────────────────────── 나이스 (학교 코드만 보낸다) ─────────────────────────
+
+/// 학교 이름으로 찾기
+#[tauri::command]
+pub async fn neis_search_schools(state: S<'_>, name: String) -> AppResult<Vec<crate::neis::SchoolInfo>> {
+    let key = state.db.with(|c| Ok(settings::load(c)?.neis_key))?;
+    blocking(move || crate::neis::search_schools(&name, &key, &crate::neis::http_get)).await
+}
+
+#[tauri::command]
+pub async fn neis_status(state: S<'_>) -> AppResult<crate::neis::NeisStatus> {
+    state.db.with(|c| crate::neis::status(c, util::now()))
+}
+
+/// 지금 받기: timetable | schedule | classes | all
+#[tauri::command]
+pub async fn neis_sync(state: S<'_>, what: String) -> AppResult<Vec<crate::neis::SyncReport>> {
+    let st = state.inner().clone();
+    let r = blocking(move || {
+        let now = util::now();
+        let get = &crate::neis::http_get;
+        let mut out = Vec::new();
+        if what == "classes" || what == "all" {
+            let s = st.db.with(|c| settings::load(c))?;
+            if let Some(school) = s.school.filter(|x| !x.code.is_empty()) {
+                let year = st.db.with(|c| Ok(students::active_school_year(c, now.date())))?;
+                let classes = crate::neis::sync_classes(&st.db, &school, &s.neis_key, year, now, get).unwrap_or_default();
+                out.push(crate::neis::SyncReport { status: "ok".into(), message: classes.join(", "), count: classes.len(), fetched_at: Some(util::fmt_dt(now)) });
+            }
+        }
+        if what == "timetable" || what == "all" {
+            out.push(crate::neis::sync_timetable(&st.db, now, get)?);
+        }
+        if what == "schedule" || what == "all" {
+            out.push(crate::neis::sync_schedule(&st.db, now, get)?);
+        }
+        Ok(out)
+    })
+    .await?;
+    state.changed("all");
+    Ok(r)
+}
+
+/// 그날 급식 (없으면 다음 급식일)
+#[tauri::command]
+pub async fn get_meals(state: S<'_>, date: String) -> AppResult<crate::neis::MealsView> {
+    let d = util::parse_d(&date).ok_or_else(|| AppError::invalid("날짜 형식이 올바르지 않습니다."))?;
+    let st = state.inner().clone();
+    blocking(move || crate::neis::meals_for(&st.db, d, util::now(), &crate::neis::http_get)).await
+}
+
+#[tauri::command]
+pub async fn timetable_colors(state: S<'_>) -> AppResult<crate::timetable::TtColors> {
+    state.db.with(|c| crate::timetable::colors(c))
+}
+
+/// 시간표 색 정하기 (scope: cell | class | room, color: 없으면 '없음')
+#[tauri::command]
+pub async fn set_timetable_color(state: S<'_>, scope: String, target: String, color: Option<String>) -> AppResult<crate::timetable::TtColors> {
+    let v = state.db.with(|c| {
+        crate::timetable::set_color(c, &scope, &target, color.as_deref())?;
+        crate::timetable::colors(c)
+    })?;
+    state.changed("timetable");
+    Ok(v)
+}
+
 #[tauri::command]
 pub async fn set_autostart(enabled: bool) -> AppResult<bool> {
-    let exe = std::env::current_exe()?;
+    let exe = crate::paths::launch_target()?;
     notify::set_autostart(enabled, &exe).map_err(AppError::msg)?;
     Ok(notify::autostart_target().is_some())
+}
+
+// ───────────────────────── 오늘 화면: 메모·칸 배치 ─────────────────────────
+// 메모는 쓰는 대로 저장하므로 data-changed 를 보내지 않는다 (화면 전체를 다시 읽지 않게)
+
+#[tauri::command]
+pub async fn list_memos(state: S<'_>) -> AppResult<Vec<crate::memos::MemoDto>> {
+    state.db.with(|c| crate::memos::list(c))
+}
+
+#[tauri::command]
+pub async fn create_memo(state: S<'_>, color: Option<String>) -> AppResult<crate::memos::MemoDto> {
+    state.db.with(|c| crate::memos::create(c, color.as_deref().unwrap_or("yellow"), util::now()))
+}
+
+#[tauri::command]
+pub async fn update_memo(state: S<'_>, id: i64, body: Option<String>, color: Option<String>) -> AppResult<crate::memos::MemoDto> {
+    state.db.with(|c| crate::memos::update(c, id, body.as_deref(), color.as_deref(), util::now()))
+}
+
+#[tauri::command]
+pub async fn delete_memo(state: S<'_>, id: i64) -> AppResult<()> {
+    state.db.with(|c| crate::memos::delete(c, id, util::now()))
+}
+
+#[tauri::command]
+pub async fn restore_memo(state: S<'_>, id: i64) -> AppResult<crate::memos::MemoDto> {
+    state.db.with(|c| crate::memos::restore(c, id))
+}
+
+#[tauri::command]
+pub async fn shift_memo(state: S<'_>, id: i64, dir: i64) -> AppResult<Vec<crate::memos::MemoDto>> {
+    state.db.with(|c| crate::memos::shift(c, id, dir))
+}
+
+#[tauri::command]
+pub async fn get_today_layout(state: S<'_>) -> AppResult<crate::today_layout::TodayLayout> {
+    state.db.with(|c| crate::today_layout::load(c))
+}
+
+#[tauri::command]
+pub async fn set_today_layout(state: S<'_>, layout: crate::today_layout::TodayLayout) -> AppResult<crate::today_layout::TodayLayout> {
+    state.db.with(|c| crate::today_layout::save(c, layout))
+}
+
+/// 창을 항상 위에 둘지: 설정에 저장하고 지금 창에도 바로 적용한다
+#[tauri::command]
+pub async fn set_always_on_top(app: tauri::AppHandle, state: S<'_>, enabled: bool) -> AppResult<bool> {
+    state.db.with(|c| {
+        let mut s = settings::load(c)?;
+        s.always_on_top = enabled;
+        settings::save(c, &s)
+    })?;
+    if let Some(w) = app.get_webview_window("main") {
+        w.set_always_on_top(enabled).map_err(|e| AppError::msg(format!("창을 항상 위에 두지 못했습니다: {e}")))?;
+        // 항상 위를 바꾸면 창 틀이 스타일을 다시 써 투명도가 풀린다 → 그 뒤에 다시 적용
+        // (창 틀이 바로 바꾸지 않을 때를 위해 잠시 뒤에 한 번 더)
+        #[cfg(windows)]
+        if let Ok(h) = w.hwnd() {
+            let raw = h.0 as isize;
+            let _ = w.run_on_main_thread(move || crate::window_fx::ensure(raw));
+            let w2 = w.clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_millis(250));
+                let _ = w2.run_on_main_thread(move || crate::window_fx::ensure(raw));
+            });
+        }
+    }
+    (state.emit)("settings-changed", json!({}));
+    Ok(enabled)
+}
+
+/// 창 투명도(%): 설정에 저장하고 지금 창에 바로 적용한다. 끌면서 바꾸므로 화면 전체를 다시 읽게 하지 않는다.
+#[tauri::command]
+pub async fn set_window_transparency(app: AppHandle, state: S<'_>, value: u8) -> AppResult<u8> {
+    let v = crate::window_fx::clamp(value);
+    state.db.with(|c| {
+        let mut s = settings::load(c)?;
+        s.window_transparency = v;
+        settings::save(c, &s)
+    })?;
+    #[cfg(windows)]
+    if let Some(w) = app.get_webview_window("main") {
+        let raw = w.hwnd().map_err(|e| AppError::msg(format!("창을 찾지 못했습니다: {e}")))?.0 as isize;
+        let (tx, rx) = std::sync::mpsc::channel();
+        w.run_on_main_thread(move || {
+            let _ = tx.send(crate::window_fx::apply(raw, v));
+        })
+        .map_err(|e| AppError::msg(e.to_string()))?;
+        rx.recv_timeout(std::time::Duration::from_secs(5))
+            .map_err(|_| AppError::msg("창 투명도를 바꾸지 못했습니다 (응답 없음)."))?
+            .map_err(AppError::msg)?;
+    }
+    #[cfg(not(windows))]
+    let _ = app;
+    Ok(v)
 }
 
 #[tauri::command]
@@ -909,6 +1295,13 @@ pub async fn open_folder(app: AppHandle, state: S<'_>, which: String) -> AppResu
         "models" => state.paths.models_dir.clone(),
         "backups" => state.paths.backups_dir.clone(),
         "logs" => state.paths.logs_dir.clone(),
+        "licenses" => {
+            let p = crate::paths::exe_dir().join("licenses");
+            if !p.is_dir() {
+                return Err(AppError::invalid("라이선스 폴더가 없습니다 (개발용 실행에서는 만들어지지 않습니다)."));
+            }
+            p
+        }
         _ => return Err(AppError::invalid("알 수 없는 폴더입니다.")),
     };
     std::fs::create_dir_all(&p)?;
@@ -916,29 +1309,20 @@ pub async fn open_folder(app: AppHandle, state: S<'_>, which: String) -> AppResu
 }
 
 #[derive(Serialize)]
-pub struct BackupFile {
-    pub name: String,
-    pub size: u64,
-    pub modified: String,
+pub struct LicenseTexts {
+    pub license: &'static str,
+    pub notices: &'static str,
+}
+
+/// 라이선스 및 저작권 (프로젝트 맨 위 LICENSE.txt, THIRD_PARTY_NOTICES.txt 를 프로그램 안에 넣어 둔다)
+#[tauri::command]
+pub async fn license_texts() -> AppResult<LicenseTexts> {
+    Ok(LicenseTexts { license: include_str!("../../LICENSE.txt"), notices: include_str!("../../THIRD_PARTY_NOTICES.txt") })
 }
 
 #[tauri::command]
-pub async fn list_backups(state: S<'_>) -> AppResult<Vec<BackupFile>> {
-    let mut out = Vec::new();
-    if let Ok(rd) = std::fs::read_dir(&state.paths.backups_dir) {
-        for e in rd.flatten() {
-            let md = e.metadata()?;
-            let modified = md
-                .modified()
-                .ok()
-                .map(|t| chrono::DateTime::<chrono::Local>::from(t).naive_local())
-                .map(util::fmt_dt)
-                .unwrap_or_default();
-            out.push(BackupFile { name: e.file_name().to_string_lossy().to_string(), size: md.len(), modified });
-        }
-    }
-    out.sort_by(|a, b| b.name.cmp(&a.name));
-    Ok(out)
+pub async fn list_backups(state: S<'_>) -> AppResult<Vec<crate::backup::BackupFile>> {
+    Ok(crate::backup::list(&state.paths.backups_dir))
 }
 
 #[tauri::command]
@@ -946,6 +1330,85 @@ pub async fn backup_now(state: S<'_>) -> AppResult<String> {
     let st = state.inner().clone();
     let p = blocking(move || app::backup_now(&st, "manual")).await?;
     Ok(p.display().to_string())
+}
+
+/// 되돌리기 확인 창에 보여 줄 백업 내용 (사본으로 검사)
+#[tauri::command]
+pub async fn inspect_backup(state: S<'_>, name: String) -> AppResult<crate::backup::BackupCounts> {
+    let st = state.inner().clone();
+    blocking(move || crate::backup::inspect(&st.paths, &name)).await
+}
+
+/// 백업 되돌리기 예약. 화면은 이어서 restart_app 을 부른다.
+#[tauri::command]
+pub async fn request_restore(state: S<'_>, name: String) -> AppResult<crate::backup::BackupCounts> {
+    let st = state.inner().clone();
+    blocking(move || crate::backup::request(&st.paths, &name)).await
+}
+
+/// 이번 시작 때 되돌리기를 했으면 그 결과 (한 번만 돌려준다)
+#[tauri::command]
+pub async fn take_restore_outcome() -> AppResult<Option<crate::backup::RestoreOutcome>> {
+    Ok(crate::backup::LAST_RESTORE.lock().unwrap_or_else(|e| e.into_inner()).take())
+}
+
+/// 이번 실행에서 내보낸 파일·폴더 (탐색기에서 보여 주기는 이 목록 안에서만)
+static EXPORTED: std::sync::Mutex<Vec<std::path::PathBuf>> = std::sync::Mutex::new(Vec::new());
+
+#[tauri::command]
+pub async fn export_data(state: S<'_>, options: crate::export::ExportOptions) -> AppResult<crate::export::ExportResult> {
+    let st = state.inner().clone();
+    let result = blocking(move || {
+        let stamp = util::now().format("%Y-%m-%d %H%M").to_string();
+        st.db.with(|c| crate::export::run(c, &options, &stamp))
+    })
+    .await?;
+    crate::logging::info(&format!("내보내기: 표 {}개, 파일 {}개", result.sheets.len(), result.files.len()));
+    EXPORTED.lock().unwrap_or_else(|e| e.into_inner()).push(std::path::PathBuf::from(&result.path));
+    Ok(result)
+}
+
+// ───────────────────────── 학년도 마감·새 학년도 ─────────────────────────
+
+#[tauri::command]
+pub async fn school_years(state: S<'_>) -> AppResult<Vec<crate::archive::YearInfo>> {
+    state.db.with(|c| crate::archive::years(c, util::now().date()))
+}
+
+/// 학년도 마감 기록물 (PDF 조판에 몇 초 걸릴 수 있어 별도 스레드)
+#[tauri::command]
+pub async fn make_year_archive(state: S<'_>, options: crate::archive::ArchiveOptions) -> AppResult<crate::archive::ArchiveResult> {
+    let st = state.inner().clone();
+    let result = blocking(move || st.db.with(|c| crate::archive::run(c, &options, util::now()))).await?;
+    crate::logging::info(&format!("학년도 마감 기록물: 파일 {}개", result.files.len()));
+    EXPORTED.lock().unwrap_or_else(|e| e.into_inner()).push(std::path::PathBuf::from(&result.folder));
+    Ok(result)
+}
+
+#[tauri::command]
+pub async fn new_year_preview(state: S<'_>, new_year: Option<i32>) -> AppResult<crate::archive::NewYearPreview> {
+    let y = new_year.unwrap_or_else(|| crate::archive::default_new_year(util::now().date()));
+    state.db.with(|c| crate::archive::preview(c, y))
+}
+
+#[tauri::command]
+pub async fn start_new_year(state: S<'_>, options: crate::archive::NewYearOptions) -> AppResult<crate::archive::NewYearResult> {
+    let st = state.inner().clone();
+    let r = blocking(move || st.db.with(|c| crate::archive::start_new_year(c, &st.paths.backups_dir, &options, util::now()))).await?;
+    state.changed("students");
+    state.changed("timetable");
+    state.changed("duties");
+    Ok(r)
+}
+
+#[tauri::command]
+pub async fn reveal_export(app: AppHandle, path: String) -> AppResult<()> {
+    use tauri_plugin_opener::OpenerExt;
+    let p = std::path::PathBuf::from(&path);
+    if !EXPORTED.lock().unwrap_or_else(|e| e.into_inner()).contains(&p) {
+        return Err(AppError::invalid("이번에 내보낸 파일만 열 수 있습니다."));
+    }
+    app.opener().reveal_item_in_dir(&p).map_err(|e| AppError::msg(format!("탐색기를 열지 못했습니다: {e}")))
 }
 
 #[derive(Deserialize)]

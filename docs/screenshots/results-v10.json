@@ -1,0 +1,237 @@
+[
+  {
+    "name": "버전 1.0",
+    "ok": true,
+    "detail": "1.0.0"
+  },
+  {
+    "name": "자동 배치: 화면 1920px → 3열",
+    "ok": true,
+    "detail": "열 3, 칸 너비 1668px"
+  },
+  {
+    "name": "  1920px: 오른쪽에 남는 빈 곳 없음",
+    "ok": true,
+    "detail": "오른쪽 여백 26px"
+  },
+  {
+    "name": "  1920px: 열마다 마지막 칸이 같은 높이에서 끝남",
+    "ok": true,
+    "detail": "[549,549,549]"
+  },
+  {
+    "name": "  1920px: 오늘의 기록은 맨 아래 넓은 줄",
+    "ok": true,
+    "detail": "[\"notes\"]"
+  },
+  {
+    "name": "  3열 자리: 할 일·메모 / 업무 요약·시간표 / 급식",
+    "ok": true,
+    "detail": "[[\"tasks\",\"memo\"],[\"briefing\",\"timetable\"],[\"meals\"]]"
+  },
+  {
+    "name": "자동 배치: 화면 2400px → 4열",
+    "ok": true,
+    "detail": "열 4, 칸 너비 2148px"
+  },
+  {
+    "name": "  2400px: 오른쪽에 남는 빈 곳 없음",
+    "ok": true,
+    "detail": "오른쪽 여백 26px"
+  },
+  {
+    "name": "  2400px: 열마다 마지막 칸이 같은 높이에서 끝남",
+    "ok": true,
+    "detail": "[430,430,430,430]"
+  },
+  {
+    "name": "  2400px: 오늘의 기록은 맨 아래 넓은 줄",
+    "ok": true,
+    "detail": "[\"notes\"]"
+  },
+  {
+    "name": "자동 배치: 화면 1280px → 2열",
+    "ok": true,
+    "detail": "열 2, 칸 너비 1013px"
+  },
+  {
+    "name": "  1280px: 오른쪽에 남는 빈 곳 없음",
+    "ok": true,
+    "detail": "오른쪽 여백 26px"
+  },
+  {
+    "name": "  1280px: 열마다 마지막 칸이 같은 높이에서 끝남",
+    "ok": true,
+    "detail": "[695,695]"
+  },
+  {
+    "name": "  1280px: 오늘의 기록은 맨 아래 넓은 줄",
+    "ok": true,
+    "detail": "[\"notes\"]"
+  },
+  {
+    "name": "자동 배치: 화면 760px → 1열",
+    "ok": true,
+    "detail": "열 1, 칸 너비 543px"
+  },
+  {
+    "name": "[새 메모] → 메모 한 장, 바로 쓸 수 있게 커서",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "쓰는 중에 화면을 다시 읽어도 쓴 글은 그대로",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "쓰는 대로 자동 저장 (따로 저장 버튼 없음)",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "메모 색 바꾸기 (6가지 중 분홍)",
+    "ok": true,
+    "detail": "pink"
+  },
+  {
+    "name": "새 메모는 맨 앞",
+    "ok": true,
+    "detail": "급식 지도 당번 (목) | 3교시 전 프린터 토너 확인"
+  },
+  {
+    "name": "메모 순서 바꾸기 (뒤로)",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "메모 지우기 → 목록에서 빠지고 [되돌리기] 안내",
+    "ok": true,
+    "detail": "메모를 지웠습니다.\n“급식 지도 당번 (목)”\n되돌리기"
+  },
+  {
+    "name": "[되돌리기] → 글까지 그대로 돌아옴",
+    "ok": true,
+    "detail": "{\"id\":2,\"body\":\"급식 지도 당번 (목)\",\"color\":\"yellow\",\"pos\":1,\"created_at\":\"2026-10-06T00:06:15\",\"updated_at\":\"2026-10-06T00:06:15\"}"
+  },
+  {
+    "name": "[칸 배치] → 칸마다 옮기기 막대 (⠿ ← ↑ ↓ → 넓게 숨기기)",
+    "ok": true,
+    "detail": "[7,7]"
+  },
+  {
+    "name": "화살표로 옮기면 직접 배치로 (할 일 → 둘째 열)",
+    "ok": true,
+    "detail": "[[\"memo\"],[\"tasks\",\"briefing\",\"timetable\"],[\"meals\",\"extras\"]]"
+  },
+  {
+    "name": "위로 옮기기 (둘째 열 맨 위)",
+    "ok": true,
+    "detail": "[\"tasks\",\"briefing\",\"timetable\"]"
+  },
+  {
+    "name": "열 수 4로",
+    "ok": true,
+    "detail": "4 / 화면 4"
+  },
+  {
+    "name": "⠿ 끌어서 옮기기: 메모 → 맨 아래 넓은 줄 (놓을 자리 표시)",
+    "ok": true,
+    "detail": "true [\"memo\",\"notes\"]"
+  },
+  {
+    "name": "[열로] → 다시 열 안으로",
+    "ok": true,
+    "detail": "{\"mode\":\"custom\",\"columns\":[[\"memo\"],[\"tasks\",\"briefing\",\"timetable\"],[\"meals\",\"extras\"],[]],\"wide\":[\"notes\"],\"hidden\":[]}"
+  },
+  {
+    "name": "[숨기기] → 급식 칸 숨김, ‘숨긴 칸’에 표시",
+    "ok": true,
+    "detail": "[\"meals\"]"
+  },
+  {
+    "name": "숨긴 칸 다시 보이기",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "[완료] → 옮기기 막대가 사라짐",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "‘항상 위에 표시’ 바로 아래 투명도 막대 (0~70%)",
+    "ok": true,
+    "detail": "윈도우 시작 시 자동 실행|항상 위에 표시|투명도"
+  },
+  {
+    "name": "처음엔 불투명 (계층 창 아님)",
+    "ok": true,
+    "detail": "{\"layered\":false,\"topmost\":true}"
+  },
+  {
+    "name": "투명도 50% → 창 알파 128 (Windows 계층 창)",
+    "ok": true,
+    "detail": "{\"layered\":true,\"alpha\":128}"
+  },
+  {
+    "name": "화면에서 실제로 반쯤 비쳐 보임 (교무수첩 내용 + 뒤 화면)",
+    "ok": true,
+    "detail": "섞인 값과 차이 0.3 / 불투명과 93.5 / 뒤 화면과 93.8"
+  },
+  {
+    "name": "70%보다 크게는 못 함 (창이 안 보이게 되는 일 막기)",
+    "ok": true,
+    "detail": "70"
+  },
+  {
+    "name": "다른 설정을 저장해도 투명도는 그대로",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "다시 켜도 직접 배치 그대로",
+    "ok": true,
+    "detail": "[[\"memo\"],[\"tasks\",\"briefing\",\"timetable\"],[\"meals\"]]"
+  },
+  {
+    "name": "다시 켜도 메모 그대로 (글·순서)",
+    "ok": true,
+    "detail": "[\"3교시 전 프린터 토너 확인\\n학부모 상담 자료 출력\",\"급식 지도 당번 (목)\"]"
+  },
+  {
+    "name": "다시 켜도 투명도 30%·항상 위 그대로",
+    "ok": true,
+    "detail": "{\"alpha\":179,\"topmost\":true,\"slider\":\"30\"}"
+  },
+  {
+    "name": "항상 위를 꺼도 투명도 30% 그대로",
+    "ok": true,
+    "detail": "{\"layered\":true,\"alpha\":179,\"topmost\":false}"
+  },
+  {
+    "name": "투명도 0% → 다시 불투명 (알파 255)",
+    "ok": true,
+    "detail": "{\"layered\":true,\"alpha\":255}"
+  },
+  {
+    "name": "좁은 화면: 4열 직접 배치를 접어 보여 줌 (칸은 모두 보임)",
+    "ok": true,
+    "detail": "[[\"memo\",\"tasks\",\"briefing\",\"timetable\"],[\"meals\"]]"
+  },
+  {
+    "name": "  접었을 때 안내 문구",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "[자동 배치] → 처음 배치로",
+    "ok": true,
+    "detail": "[[\"tasks\",\"memo\",\"timetable\"],[\"briefing\",\"meals\",\"extras\"]]"
+  },
+  {
+    "name": "업데이트 기록: v1.0 (칸 배치·메모·투명도)",
+    "ok": true,
+    "detail": ""
+  }
+]

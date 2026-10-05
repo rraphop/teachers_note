@@ -207,6 +207,9 @@ function EventEditor({ req, onClose }: { req: Extract<EditorReq, { kind: "event"
   const [remind, setRemind] = useState<ReminderSpec | null>(null);
   const [meta, setMeta] = useState<{ source: string; edited: boolean; noteId: number | null; createdAt: string; next: string | null } | null>(null);
   const [busy, setBusy] = useState(false);
+  // 학사력은 대부분 하루짜리라 기본은 하루, 필요할 때만 기간으로 늘린다
+  const [multiDay, setMultiDay] = useState(false);
+  const showTime = layer !== "annual";
 
   useEffect(() => {
     if (req.id === undefined) return;
@@ -217,6 +220,7 @@ function EventEditor({ req, onClose }: { req: Extract<EditorReq, { kind: "event"
         setTitle(e.title);
         setStart(e.start_date);
         setEnd(e.end_date);
+        setMultiDay(e.end_date > e.start_date);
         setTime(e.time);
         setExpr(e.date_expr);
         setMemo(e.memo);
@@ -230,7 +234,16 @@ function EventEditor({ req, onClose }: { req: Extract<EditorReq, { kind: "event"
   const save = async () => {
     setBusy(true);
     try {
-      const input = { layer, title, start_date: start, end_date: end < start ? start : end, time, date_expr: expr, memo, remind: r ?? null };
+      const input = {
+        layer,
+        title,
+        start_date: start,
+        end_date: multiDay && end > start ? end : start,
+        time: showTime ? time : null,
+        date_expr: expr,
+        memo,
+        remind: r ?? null,
+      };
       if (req.id === undefined) await api.createEvent(input);
       else await api.updateEvent(req.id, input);
       toast("일정을 저장했습니다.");
@@ -250,7 +263,7 @@ function EventEditor({ req, onClose }: { req: Extract<EditorReq, { kind: "event"
   };
   return (
     <Modal
-      title={req.id === undefined ? "일정 추가" : "일정 수정"}
+      title={`${layer === "note" ? "일정" : LAYER_LABEL[layer]} ${req.id === undefined ? "추가" : "수정"}`}
       onClose={onClose}
       footer={
         <>
@@ -283,9 +296,9 @@ function EventEditor({ req, onClose }: { req: Extract<EditorReq, { kind: "event"
         <span>내용</span>
         <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="예: 2학기 개학식" />
       </label>
-      <div className="row gap">
+      <div className="row gap wrap">
         <label className="field grow">
-          <span>시작 날짜</span>
+          <span>{multiDay ? "시작 날짜" : "날짜"}</span>
           <input
             type="date"
             value={start}
@@ -295,15 +308,39 @@ function EventEditor({ req, onClose }: { req: Extract<EditorReq, { kind: "event"
             }}
           />
         </label>
-        <label className="field grow">
-          <span>끝 날짜</span>
-          <input type="date" value={end} min={start} onChange={(e) => setEnd(e.target.value)} />
-        </label>
-        <label className="field">
-          <span>시각 (선택)</span>
-          <input type="time" value={time ?? ""} onChange={(e) => setTime(e.target.value || null)} />
-        </label>
+        {multiDay && (
+          <label className="field grow">
+            <span>끝 날짜</span>
+            <input type="date" value={end} min={start} onChange={(e) => setEnd(e.target.value)} />
+          </label>
+        )}
+        {showTime && (
+          <label className="field">
+            <span>시각 (선택)</span>
+            <input type="time" value={time ?? ""} onChange={(e) => setTime(e.target.value || null)} />
+          </label>
+        )}
       </div>
+      <label className="check">
+        <input
+          type="checkbox"
+          checked={multiDay}
+          onChange={(e) => {
+            setMultiDay(e.target.checked);
+            if (e.target.checked && end <= start) {
+              const d = new Date(`${start}T00:00:00`);
+              d.setDate(d.getDate() + 4);
+              setEnd(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`);
+            }
+          }}
+        />
+        기간으로 설정 (여러 날 — 예: 시험 기간, 수련회, 방학)
+      </label>
+      {multiDay && end > start && (
+        <p className="hint">
+          {Math.round((new Date(`${end}T00:00:00`).getTime() - new Date(`${start}T00:00:00`).getTime()) / 86400000) + 1}일 동안
+        </p>
+      )}
       {expr && <p className="hint">원래 날짜 표현: {expr}</p>}
       <label className="field">
         <span>메모 (선택)</span>

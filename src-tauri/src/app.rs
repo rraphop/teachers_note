@@ -262,15 +262,7 @@ pub fn fire_due_reminders(state: &AppState, now: chrono::NaiveDateTime) -> AppRe
 }
 
 pub fn backup_now(state: &AppState, label: &str) -> AppResult<std::path::PathBuf> {
-    std::fs::create_dir_all(&state.paths.backups_dir)?;
-    let name = format!("notebook-{}-{label}.db", util::now().format("%Y%m%d-%H%M%S"));
-    let dest = state.paths.backups_dir.join(name);
-    let dest_s = dest.to_string_lossy().to_string();
-    state.db.with(|c| {
-        c.execute("VACUUM INTO ?1", params![dest_s])?;
-        Ok(())
-    })?;
-    Ok(dest)
+    state.db.with(|c| crate::backup::backup_with(c, &state.paths.backups_dir, label))
 }
 
 /// 하루 한 번 자동 백업하고 최근 14개만 남긴다
@@ -284,8 +276,8 @@ pub fn daily_backup(state: &AppState) -> AppResult<()> {
     if autos.iter().any(|p| p.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.starts_with(&format!("notebook-{today}")))) {
         return Ok(());
     }
-    let has_data: i64 = state.db.with(|c| Ok(c.query_row("SELECT COUNT(*) FROM notes", [], |r| r.get(0))?))?;
-    if has_data == 0 {
+    // 기록이 없어도 명렬표·시간표·일정만 있으면 백업한다
+    if !state.db.with(|c| crate::backup::has_user_data(c))? {
         return Ok(());
     }
     let p = backup_now(state, "auto")?;

@@ -101,6 +101,9 @@ static RE_FULL: Lazy<Regex> = Lazy::new(|| {
 });
 static RE_MD_KO: Lazy<Regex> = Lazy::new(|| Regex::new(r"(\d{1,2})\s*월\s*(\d{1,2})\s*일").unwrap());
 static RE_MD_SLASH: Lazy<Regex> = Lazy::new(|| Regex::new(r"(\d{1,2})/(\d{1,2})").unwrap());
+/// "10-2". 학급 표기("2-1")와 헷갈리지 않게 7~12월이거나, 바로 뒤에 시각이 올 때만 날짜로 본다.
+static RE_MD_DASH: Lazy<Regex> = Lazy::new(|| Regex::new(r"(\d{1,2})-(\d{1,2})").unwrap());
+static RE_TIME_AHEAD: Lazy<Regex> = Lazy::new(|| Regex::new(r"^\s*(?:\d{1,2}:\d{2}|오전|오후|\d{1,2}\s*시)").unwrap());
 static RE_MD_DOT: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r"(\d{1,2})\.\s?(\d{1,2})(?:\.|\s*\([월화수목금토일]\))").unwrap()
 });
@@ -186,6 +189,20 @@ pub fn find_dates(text: &str, today: NaiveDate) -> Vec<DateHit> {
         }
         let mo: u32 = m[1].parse().unwrap_or(0);
         let d: u32 = m[2].parse().unwrap_or(0);
+        push(&mut c, whole.start(), whole.end(), infer_year(mo, d, today), false, false);
+    }
+    for m in RE_MD_DASH.captures_iter(text) {
+        let whole = m.get(0).unwrap();
+        let before_ok = prev_char(text, whole.start()).is_none_or(|ch| !ch.is_ascii_digit() && ch != '-' && ch != '.');
+        let after_ok = next_char(text, whole.end()).is_none_or(|ch| !ch.is_ascii_digit() && ch != '-');
+        if !(before_ok && after_ok) {
+            continue;
+        }
+        let mo: u32 = m[1].parse().unwrap_or(0);
+        let d: u32 = m[2].parse().unwrap_or(0);
+        if !((7..=12).contains(&mo) || RE_TIME_AHEAD.is_match(&text[whole.end()..])) {
+            continue;
+        }
         push(&mut c, whole.start(), whole.end(), infer_year(mo, d, today), false, false);
     }
     for m in RE_MD_DOT.captures_iter(text) {
@@ -568,14 +585,14 @@ mod tests {
     #[test]
     fn no_false_positives() {
         assert!(find_dates("3교시 수업 중 발표", today()).is_empty());
-        assert!(find_dates("2-1 김민수 지각", today()).is_empty());
+        assert!(find_dates("2-1 홍길동 지각", today()).is_empty());
         assert!(find_dates("점수 3.5점", today()).is_empty());
         assert!(find_dates("1/2 정도 제출", today()).len() <= 1);
     }
 
     #[test]
     fn scenario_a_multiple_dates() {
-        let hits = find_dates("오늘 3교시 2-1 김민수 지각. 담임에게 알리고 금요일까지 보호자 연락.", today());
+        let hits = find_dates("오늘 3교시 2-1 홍길동 지각. 담임에게 알리고 금요일까지 보호자 연락.", today());
         assert_eq!(hits.len(), 2);
         assert_eq!(hits[0].date, d(2026, 9, 29));
         assert_eq!(hits[1].date, d(2026, 10, 2));

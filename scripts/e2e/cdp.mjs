@@ -69,8 +69,8 @@ export async function connect(port = 9333, timeout = 40000) {
   };
   await send("Page.enable");
   await send("Runtime.enable");
-  // 화면 조작 도우미를 페이지에 심는다
-  await evaluate(`(() => {
+  // 화면 조작 도우미를 페이지에 심는다. 화면이 다시 읽혀도 남도록 새 문서마다 넣는다.
+  const helpers = `(() => {
     window.__e2e = {
       invoke: (cmd, args) => window.__TAURI_INTERNALS__.invoke(cmd, args || {}),
       byText: (text, sel = 'button') => [...document.querySelectorAll(sel)].find(e => (e.innerText || e.textContent || '').replace(/\\s+/g,' ').includes(text)),
@@ -78,8 +78,9 @@ export async function connect(port = 9333, timeout = 40000) {
       setValue: (el, value) => {
         const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : el.tagName === 'SELECT' ? HTMLSelectElement.prototype : HTMLInputElement.prototype;
         Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, value);
+        // 선택 상자는 실제 사용처럼 change 한 번만 (두 번 보내면 React 가 두 번째를 예전 값으로 받는다)
         el.dispatchEvent(new Event(el.tagName === 'SELECT' ? 'change' : 'input', { bubbles: true }));
-        el.dispatchEvent(new Event('change', { bubbles: true }));
+        if (el.tagName !== 'SELECT') el.dispatchEvent(new Event('change', { bubbles: true }));
         return true;
       },
       type: (selector, value) => { const el = document.querySelector(selector); if (!el) throw new Error('입력칸 없음: ' + selector); return window.__e2e.setValue(el, value); },
@@ -87,7 +88,9 @@ export async function connect(port = 9333, timeout = 40000) {
       nav: (label) => window.__e2e.click(label, '.sidebar button'),
     };
     return true;
-  })()`);
+  })()`;
+  await send("Page.addScriptToEvaluateOnNewDocument", { source: helpers });
+  await evaluate(helpers);
   return {
     send,
     evaluate,

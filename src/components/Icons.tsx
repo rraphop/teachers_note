@@ -29,6 +29,18 @@ export const IconCalendar = (p: P) => (
     <path d="M16 3v4M8 3v4M3 10h18" />
   </svg>
 );
+export const IconTimetable = (p: P) => (
+  <svg {...base(p)}>
+    <rect x="3" y="4" width="18" height="17" rx="2" />
+    <path d="M3 9h18M9 9v12M15 9v12M3 15h18" />
+  </svg>
+);
+export const IconHistory = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
+    <path d="M3 3v5h5M12 7v5l3 2" />
+  </svg>
+);
 export const IconNote = (p: P) => (
   <svg {...base(p)}>
     <path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4Z" />
@@ -156,5 +168,13 @@ export const IconCopy = (p: P) => (
   <svg {...base(p)}>
     <rect x="8" y="8" width="13" height="13" rx="2" />
     <path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3" />
+  </svg>
+);
+export const IconLayout = (p: P) => (
+  <svg {...base(p)}>
+    <rect x="3" y="3" width="7" height="9" rx="1.5" />
+    <rect x="14" y="3" width="7" height="5" rx="1.5" />
+    <rect x="14" y="12" width="7" height="9" rx="1.5" />
+    <rect x="3" y="16" width="7" height="5" rx="1.5" />
   </svg>
 );

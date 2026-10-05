@@ -1,6 +1,7 @@
 import { api, errorText } from "../api";
 import { fmtDate, fmtDateTime, fmtTime, relDays, todayISO } from "../lib/format";
 import { LAYER_LABEL, sourceLabel } from "../lib/labels";
+import { DAY_KIND_LABEL, dayHex } from "../lib/palette";
 import { useStore } from "../lib/store";
 import type { AgendaItem } from "../types";
 import { openEditor } from "./Editors";
@@ -11,6 +12,7 @@ export function AgendaRow({ item, showDate = true }: { item: AgendaItem; showDat
   const { toast, bump } = useStore();
   const today = todayISO();
   const overdue = !!item.date && item.date < today && !item.done && item.kind !== "event";
+  const dayColor = item.day_color ? dayHex(item.day_color) : null;
   const toggle = async (done: boolean) => {
     try {
       if (item.kind === "task") await api.setTaskDone(item.id, done);
@@ -27,16 +29,28 @@ export function AgendaRow({ item, showDate = true }: { item: AgendaItem; showDat
       {item.kind !== "event" ? (
         <input type="checkbox" className="big-check" checked={item.done} onChange={(e) => void toggle(e.target.checked)} aria-label={`${item.title} 완료`} />
       ) : (
-        <span className={`layer-dot layer-${item.layer ?? "note"}`} title={LAYER_LABEL[item.layer ?? "note"]} />
+        // 점 색: 휴일·휴업일·방학은 설정에서 고른 날짜 색, 그 밖의 일정은 층 색 (빨강 = 휴일로 읽히므로 학사력 층은 빨강을 쓰지 않는다)
+        <span
+          className={`layer-dot layer-${item.layer ?? "note"}`}
+          style={dayColor ? { background: dayColor } : undefined}
+          title={item.day_color ? `${LAYER_LABEL[item.layer ?? "note"]} · ${DAY_KIND_LABEL[item.day_kind] ?? ""}` : LAYER_LABEL[item.layer ?? "note"]}
+        />
       )}
       <button className="agenda-main" onClick={edit} title="눌러서 수정">
         <span className="agenda-title">{item.title}</span>
+        {item.memo && <span className="agenda-memo">{item.memo}</span>}
         <span className="agenda-meta">
           {item.kind === "duty_log" && <span className="tag duty">업무</span>}
           {item.kind === "event" && <span className="tag">{LAYER_LABEL[item.layer ?? "note"]}</span>}
+          {dayColor && (
+            <span className="tag day-kind-tag" style={{ color: dayColor, borderColor: dayColor }}>
+              {DAY_KIND_LABEL[item.day_kind]}
+            </span>
+          )}
           {item.duty_label && <span className="tag duty">{item.duty_label}</span>}
           {item.kind !== "event" && <span className={`tag src-${item.source}`}>{sourceLabel(item.source)}</span>}
-          {item.date_expr && <span className="muted">“{item.date_expr}”</span>}
+          {/* "10. 2." 처럼 숫자로만 적은 날짜는 이미 "10월 2일"로 보이므로 원래 표현을 다시 보이지 않는다 */}
+          {item.date_expr && !/^[\d\s./\-()년월일화수목금토]+$/.test(item.date_expr) && <span className="muted">“{item.date_expr}”</span>}
         </span>
       </button>
       {showDate && (

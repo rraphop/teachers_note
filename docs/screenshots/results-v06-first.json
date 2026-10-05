@@ -1,0 +1,17 @@
+[
+  {
+    "name": "실행기로 켜짐: 파일 위치를 앎",
+    "ok": true,
+    "detail": "C:\\Users\\rraph\\AppData\\Local\\Temp\\tn-single-e2e-c1a950eb953d42eb98b3bb83f884132c\\desktop\\교무수첩(0.61).exe"
+  },
+  {
+    "name": "풀린 위치: program\\0.6.1",
+    "ok": true,
+    "detail": "C:\\Users\\rraph\\AppData\\Local\\Temp\\tn-single-e2e-c1a950eb953d42eb98b3bb83f884132c\\data\\program\\0.6.1"
+  },
+  {
+    "name": "설정 → 데이터에 ‘파일 하나 버전’ 위치 표시",
+    "ok": true,
+    "detail": "교무수첩(0.61).exe"
+  }
+]

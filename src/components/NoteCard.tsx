@@ -8,15 +8,45 @@ import { ClassifyEditor } from "./ClassifyEditor";
 import { IconEdit, IconSpark, IconTrash } from "./Icons";
 import { confirmDialog } from "./Modal";
 
-export function StatusBadge({ status }: { status: Note["status"] }) {
-  return <span className={`status status-${status}`}>{status === "processing" && <span className="spinner" />}{STATUS_LABEL[status]}</span>;
+export function StatusBadge({ status, by }: { status: Note["status"]; by?: string | null }) {
+  // 기록 전체가 시간표 문장이라 규칙으로 바로 정리한 경우
+  const label = status === "classified" && by === "rule" ? "시간표에 반영함" : STATUS_LABEL[status];
+  return <span className={`status status-${status}`}>{status === "processing" && <span className="spinner" />}{label}</span>;
+}
+
+/** 다른 수업이 있던 시간표 칸: 바꾸기 / 그대로 두기 */
+function ConflictChip({ id, label }: { id: number; label: string }) {
+  const { toast, bump } = useStore();
+  const resolve = async (replace: boolean) => {
+    try {
+      await api.resolveTtConflict(id, replace);
+      toast(replace ? "시간표 칸을 바꾸었습니다." : "원래 수업을 그대로 두었습니다.");
+      bump();
+    } catch (e) {
+      toast(errorText(e), "error");
+    }
+  };
+  return (
+    <span className="chip tt_conflict">
+      시간표 확인 · {label}
+      <button className="chip-btn" onClick={() => void resolve(true)}>
+        바꾸기
+      </button>
+      <button className="chip-btn" onClick={() => void resolve(false)}>
+        그대로
+      </button>
+    </span>
+  );
 }
 
 export function NoteChips({ note }: { note: Note }) {
   if (note.chips.length === 0) return null;
   return (
     <div className="chips">
-      {note.chips.map((c, i) => (
+      {note.chips.map((c, i) =>
+        c.kind === "tt_conflict" && c.ref_id !== null ? (
+          <ConflictChip key={i} id={c.ref_id} label={c.label} />
+        ) : (
         <span key={i} className={`chip ${c.kind} ${c.done ? "done" : ""} ${c.area ? `area-${c.area}` : ""}`}>
           {c.kind === "student" && (
             <>
@@ -36,8 +66,11 @@ export function NoteChips({ note }: { note: Note }) {
             </>
           )}
           {c.kind === "duty" && <>업무 · {c.label}</>}
+          {c.kind === "timetable" && <>시간표 · {c.label}</>}
+          {c.kind === "tt_change" && <>시간표 변경 · {c.label}</>}
         </span>
-      ))}
+        ),
+      )}
     </div>
   );
 }
@@ -56,6 +89,15 @@ export function NoteCard({ note, highlight }: { note: Note; highlight?: boolean 
       if (d.has_user_changes && !(await confirmDialog("고치거나 완료한 항목이 있습니다. AI로 다시 분류하면 이 기록의 분류 결과가 새 결과로 바뀝니다. 계속할까요?", { okText: "다시 분류" }))) return;
       await api.reclassifyNote(note.id);
       toast("AI가 다시 정리합니다.");
+      bump();
+    } catch (e) {
+      toast(errorText(e), "error");
+    }
+  };
+  const moveTrack = async (track: "general" | "work") => {
+    try {
+      await api.setNoteTrack(note.id, track);
+      toast(track === "work" ? "정리된 업무기록으로 옮겼습니다." : "일반 기록으로 되돌렸습니다.");
       bump();
     } catch (e) {
       toast(errorText(e), "error");
@@ -88,11 +130,16 @@ export function NoteCard({ note, highlight }: { note: Note; highlight?: boolean 
   };
 
   return (
-    <article className={`note-card ${highlight ? "highlight" : ""} ${unclassified ? "unclassified" : ""}`} id={`note-${note.id}`}>
+    <article className={`note-card ${highlight ? "highlight" : ""} ${unclassified ? "unclassified" : ""} ${note.is_work ? "track-work" : "track-general"}`} id={`note-${note.id}`}>
       <header className="note-head">
-        <StatusBadge status={note.status} />
+        <StatusBadge status={note.status} by={note.classified_by} />
         <time dateTime={note.created_at}>{fmtDateTime(note.created_at)}</time>
         {note.raw_edited_at && <span className="muted">원문 수정 {fmtDateTime(note.raw_edited_at)}</span>}
+        <span className="grow" />
+        <span className={`track-tag ${note.is_work ? "work" : "general"}`} title={note.track ? "직접 옮긴 기록입니다. AI가 다시 분류해도 바뀌지 않습니다." : undefined}>
+          {note.is_work ? "업무기록" : "일반 기록"}
+          {note.track && " · 직접 옮김"}
+        </span>
       </header>
       {note.summary && <p className="note-summary">{note.summary}</p>}
       {rawEdit === null ? (
@@ -157,6 +204,15 @@ export function NoteCard({ note, highlight }: { note: Note; highlight?: boolean 
           </>
         )}
         <span className="grow" />
+        {note.is_work ? (
+          <button className="ghost" onClick={() => void moveTrack("general")}>
+            일반으로 되돌리기
+          </button>
+        ) : (
+          <button className="ghost" onClick={() => void moveTrack("work")} disabled={note.status === "processing"}>
+            업무기록으로 보내기
+          </button>
+        )}
         <button className="ghost" onClick={() => setRawEdit(note.raw_text)} disabled={rawEdit !== null}>
           원문 수정
         </button>

@@ -1,0 +1,46 @@
+로컬 AI 교무수첩 — 제3자 구성요소 고지 (Third-Party Notices)
+
+이 프로그램에는 다른 사람이 만든 오픈소스 구성요소가 들어 있습니다.
+각 구성요소는 아래 라이선스를 따르며, 이 고지는 로컬 AI 교무수첩 자체의
+라이선스(LICENSE.txt)를 바꾸지 않습니다. 라이선스 전문은 프로그램 폴더의
+licenses 폴더에 있습니다 (설정 → 라이선스 및 저작권 → [라이선스 폴더 열기]).
+
+────────────────────────────────────────
+[AI 모델] — 프로그램에 들어 있지 않으며, 사용자가 설정에서 받을 때 각 라이선스를 따릅니다.
+  Qwen2.5 0.5B Instruct, Qwen3 8B, Qwen3.5 2B / 4B / 9B (Alibaba Cloud Qwen 팀)
+    — Apache License 2.0 — https://huggingface.co/Qwen
+  Gemma 4 E4B (Google)
+    — Apache License 2.0 — https://huggingface.co/google/gemma-4-E4B-it
+  모델 주소·크기·SHA-256·라이선스 주소는 resources\model-catalog.json 에 공개합니다.
+  AI 모델이 만든 결과는 참고 자료이며, 정확성을 보장하지 않습니다.
+
+[AI 엔진]
+  llama.cpp / ggml (b11000) — MIT License — https://github.com/ggml-org/llama.cpp
+    공식 소스를 llvm-mingw(clang)로 직접 빌드해 runtime\llama.cpp 에 넣었습니다.
+  LLVM libc++ / libunwind (llvm-mingw) — Apache-2.0 WITH LLVM-exception
+    — https://github.com/mstorsjo/llvm-mingw
+
+[앱 틀과 화면]
+  Tauri 2 (tauri, 플러그인 dialog·opener·clipboard-manager·single-instance)
+    — Apache-2.0 OR MIT — https://tauri.app
+  Microsoft Edge WebView2 Loader (WebView2Loader.dll)
+    — Microsoft WebView2 SDK 라이선스에 따른 재배포 — https://aka.ms/webview2
+  React, React DOM 19 — MIT License — https://react.dev
+
+[데이터와 문서]
+  SQLite — Public Domain — https://sqlite.org
+  rusqlite — MIT License — https://github.com/rusqlite/rusqlite
+  Typst 0.15 (PDF 기록물 만들기) — Apache License 2.0 — https://typst.app
+  rust_xlsxwriter (엑셀 저장) — MIT OR Apache-2.0 — https://github.com/jmcnamara/rust_xlsxwriter
+  calamine (나이스 명렬표 엑셀 읽기) — MIT License — https://github.com/tafia/calamine
+
+[그 밖의 Rust 라이브러리]
+  serde, serde_json, chrono, regex, reqwest, once_cell, sha2, thiserror,
+  sysinfo, windows-rs 등 — 대부분 MIT 또는 Apache-2.0 이며,
+  전체 목록과 버전, 라이선스 전문은 licenses 폴더의 THIRD-PARTY-NOTICES.txt 와
+  licenses\rust, licenses\npm 폴더에 있습니다.
+
+[글꼴]
+  프로그램에 글꼴 파일은 들어 있지 않습니다. 화면과 PDF 기록물은 이 PC에 설치된
+  Windows 글꼴(맑은 고딕)을 씁니다.
+────────────────────────────────────────

@@ -56,7 +56,15 @@ pub fn sentences(text: &str) -> Vec<Span> {
                 let decimal = prev.is_some_and(|c| c.is_ascii_digit()) && next.is_some_and(|c| c.is_ascii_digit());
                 // "10.15." 의 마지막 점은 날짜의 일부
                 let dotted_date = RE_DOTTED_DATE_END.is_match(&text[start..pos]);
-                !(decimal || dotted_date)
+                // "10. 2." / "2026. 10. 2." 의 앞쪽 점(년·월 뒤)도 날짜의 일부 — 여기서 자르면 제목이 "10"이 된다
+                let date_head = {
+                    let before = &text[start..pos];
+                    let nd = before.chars().rev().take_while(|c| c.is_ascii_digit()).count();
+                    let after = text[pos + 1..].trim_start_matches(' ');
+                    let na = after.chars().take_while(|c| c.is_ascii_digit()).count();
+                    matches!(nd, 1 | 2 | 4) && (1..=2).contains(&na) && after[na..].starts_with('.')
+                };
+                !(decimal || dotted_date || date_head)
             }
             _ => false,
         };
@@ -224,8 +232,8 @@ mod tests {
 
     #[test]
     fn split_sentences() {
-        let t = "오늘 3교시 2-1 김민수 지각. 담임에게 알리고 금요일까지 보호자 연락.";
-        assert_eq!(texts(t, &sentences(t)), vec!["오늘 3교시 2-1 김민수 지각.", "담임에게 알리고 금요일까지 보호자 연락."]);
+        let t = "오늘 3교시 2-1 홍길동 지각. 담임에게 알리고 금요일까지 보호자 연락.";
+        assert_eq!(texts(t, &sentences(t)), vec!["오늘 3교시 2-1 홍길동 지각.", "담임에게 알리고 금요일까지 보호자 연락."]);
     }
 
     #[test]
@@ -236,9 +244,9 @@ mod tests {
 
     #[test]
     fn split_clauses() {
-        let t = "오늘 3교시 2-1 김민수 지각. 담임에게 알리고 금요일까지 보호자 연락.";
+        let t = "오늘 3교시 2-1 홍길동 지각. 담임에게 알리고 금요일까지 보호자 연락.";
         let cs: Vec<String> = clauses(t).iter().map(|c| c.span.slice(t).to_string()).collect();
-        assert_eq!(cs, vec!["오늘 3교시 2-1 김민수 지각.", "담임에게 알리고", "금요일까지 보호자 연락."]);
+        assert_eq!(cs, vec!["오늘 3교시 2-1 홍길동 지각.", "담임에게 알리고", "금요일까지 보호자 연락."]);
         let t = "학생들이 수업 중 손장난을 했고 지적을 받았습니다.";
         let cs: Vec<String> = clauses(t).iter().map(|c| c.span.slice(t).to_string()).collect();
         assert_eq!(cs, vec!["학생들이 수업 중 손장난을 했고", "지적을 받았습니다."]);
@@ -261,7 +269,7 @@ mod tests {
 
     #[test]
     fn best_span_recovers_clause() {
-        let raw = "오늘 3교시 2-1 김민수 지각. 담임에게 알리고 금요일까지 보호자 연락.";
+        let raw = "오늘 3교시 2-1 홍길동 지각. 담임에게 알리고 금요일까지 보호자 연락.";
         let (sp, score) = best_source_span("보호자에게 연락하기", raw).unwrap();
         assert_eq!(sp.slice(raw), "금요일까지 보호자 연락.");
         assert!(score > 0.2);

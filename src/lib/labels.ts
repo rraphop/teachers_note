@@ -1,26 +1,34 @@
 import type { Area, ItemKind, NoteStatus } from "../types";
 
-export const AREA_ORDER: Area[] = ["attendance", "subject", "autonomous", "career", "volunteer", "club", "behavior"];
+/** 관찰 기록 영역 (학생 상세·수정 창). 학생부 자료 화면의 탭 7개는 RECORD_TABS */
+export const AREA_ORDER: Area[] = ["attendance", "subject", "autonomous", "career", "volunteer", "club", "behavior", "free_semester", "daily"];
+
+/** 학생부 자료 영역 7개 (창체 자율·자치, 교과, 행특, 동아리, 진로, 자유학기, 일상생활) */
+export const RECORD_TABS: Area[] = ["autonomous", "subject", "behavior", "club", "career", "free_semester", "daily"];
 
 export const AREA_LABEL: Record<Area, string> = {
   attendance: "출결특기사항",
   subject: "교과특기사항",
-  autonomous: "창체 — 자율",
+  autonomous: "창체 — 자율·자치",
   career: "창체 — 진로",
   volunteer: "창체 — 봉사",
   club: "창체 — 동아리",
   behavior: "행동특성 및 종합의견",
+  free_semester: "자유학기활동",
+  daily: "일상생활 활동상황",
   none: "영역 미지정",
 };
 
 export const AREA_SHORT: Record<Area, string> = {
   attendance: "출결",
   subject: "교과",
-  autonomous: "자율",
+  autonomous: "자율·자치",
   career: "진로",
   volunteer: "봉사",
   club: "동아리",
   behavior: "행특",
+  free_semester: "자유학기",
+  daily: "일상생활",
   none: "미지정",
 };
 
@@ -47,13 +55,17 @@ export const LAYER_LABEL: Record<string, string> = {
   note: "기록 일정",
   task: "할 일",
   duty: "업무",
+  birthday: "생일",
+  tt_change: "시간표 변경",
 };
 
 export const LAYER_HELP: Record<string, string> = {
+  birthday: "학급명렬표의 학생 생일 — 연간·월간·주간 표에 보입니다",
   annual: "연간·월간·주간 표에 모두 보입니다",
   monthly: "월간·주간 표에 보입니다",
   weekly: "주간 표에만 보입니다",
   note: "기록에서 찾은 일정 — 월간·주간 표에 보입니다",
+  tt_change: "기록에 적은 하루짜리 시간표 변경(보강·교체·자습·휴강) — 월간·주간 표에 보입니다",
 };
 
 export const STATUS_LABEL: Record<NoteStatus, string> = {

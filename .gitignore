@@ -1,6 +1,7 @@
 node_modules/
 dist/
 dist-portable/
+dist-portable-*/
 src-tauri/target/
 src-tauri/gen/
 src-tauri/runtime/
@@ -10,3 +11,9 @@ src-tauri/runtime/
 *.db
 *.db-wal
 *.db-shm
+launcher/target/
+
+# 학생 정보가 든 파일 (실제 명렬표 등) — 저장소에 넣지 않는다
+**/학생명렬표*.xlsx
+**/학생명렬표*.xls
+*.roster.xlsx

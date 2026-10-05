@@ -1,7 +1,7 @@
 import { listen } from "@tauri-apps/api/event";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
-export type PageId = "today" | "calendar" | "notes" | "students" | "records" | "duties" | "tasks" | "search" | "settings";
+export type PageId = "today" | "calendar" | "timetable" | "notes" | "students" | "records" | "duties" | "tasks" | "search" | "settings";
 
 export interface NavParams {
   studentId?: number;

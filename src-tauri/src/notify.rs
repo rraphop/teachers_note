@@ -8,6 +8,21 @@ pub const AUMID: &str = "LocalTeacherNotebook.V2";
 pub const DISPLAY_NAME: &str = "로컬 AI 교무수첩";
 const RUN_VALUE: &str = "LocalTeacherNotebookV2";
 
+/// 시작 프로그램에 적는 명령: Windows 에 로그인하면 창을 띄운 채로 켠다
+/// (0.9 이전에는 `--background` 를 붙여 알림 영역에만 켰다 — 프로그램을 켤 때 이 모양으로 고쳐 쓴다)
+pub fn autostart_command(exe: &std::path::Path) -> String {
+    format!("\"{}\"", exe.display())
+}
+
+/// 시작 프로그램에 적힌 명령에서 실행 파일 경로만 꺼낸다 (`"C:\…\교무수첩(0.9).exe" --background` → `C:\…\교무수첩(0.9).exe`)
+pub fn autostart_exe(cmd: &str) -> String {
+    let t = cmd.trim();
+    match t.strip_prefix('"').and_then(|r| r.split_once('"')) {
+        Some((p, _)) => p.to_string(),
+        None => t.trim_end_matches("--background").trim().to_string(),
+    }
+}
+
 fn xml_escape(s: &str) -> String {
     s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;").replace('\'', "&apos;")
 }
@@ -105,17 +120,23 @@ mod win {
     }
 
     const RUN_KEY: &str = "Software\\Microsoft\\Windows\\CurrentVersion\\Run";
+    /// 자동 시험(TN_DATA_ROOT 로 따로 만든 데이터 폴더)에서는 실제 시작 프로그램 목록 대신 이 키에 쓴다
+    const TEST_RUN_KEY: &str = "Software\\LocalTeacherNotebookV2-Test\\Run";
+
+    fn run_key() -> &'static str {
+        if std::env::var_os("TN_DATA_ROOT").is_some_and(|v| !v.is_empty()) { TEST_RUN_KEY } else { RUN_KEY }
+    }
 
     pub fn set_autostart(enabled: bool, exe: &std::path::Path) -> Result<(), String> {
         if enabled {
-            let key = create_key(RUN_KEY)?;
-            let res = set_string(key, RUN_VALUE, &format!("\"{}\" --background", exe.display()));
+            let key = create_key(run_key())?;
+            let res = set_string(key, RUN_VALUE, &autostart_command(exe));
             unsafe {
                 let _ = RegCloseKey(key);
             }
             res
         } else {
-            let p = wide(RUN_KEY);
+            let p = wide(run_key());
             let mut key = HKEY::default();
             unsafe {
                 if RegOpenKeyExW(HKEY_CURRENT_USER, PCWSTR(p.as_ptr()), None, KEY_WRITE, &mut key) == ERROR_SUCCESS {
@@ -129,7 +150,7 @@ mod win {
     }
 
     pub fn autostart_target() -> Option<String> {
-        let p = wide(RUN_KEY);
+        let p = wide(run_key());
         let n = wide(RUN_VALUE);
         let mut key = HKEY::default();
         unsafe {
@@ -176,5 +197,16 @@ mod tests {
     #[test]
     fn escapes_xml() {
         assert_eq!(super::xml_escape("<a & \"b\">"), "&lt;a &amp; &quot;b&quot;&gt;");
+    }
+
+    #[test]
+    fn autostart_command_shows_window_and_reads_old_form() {
+        let exe = std::path::Path::new(r"C:\Users\teacher\Desktop\교무수첩(0.9).exe");
+        // 새 모양: 경로만 (창을 띄운 채로 켠다)
+        assert_eq!(super::autostart_command(exe), r#""C:\Users\teacher\Desktop\교무수첩(0.9).exe""#);
+        assert_eq!(super::autostart_exe(&super::autostart_command(exe)), exe.display().to_string());
+        // 예전 모양(알림 영역에만 켜기)도 경로를 읽는다
+        assert_eq!(super::autostart_exe(r#""C:\a b\교무수첩(0.8).exe" --background"#), r"C:\a b\교무수첩(0.8).exe");
+        assert_eq!(super::autostart_exe(r"C:\a\TeacherNotebook.exe --background"), r"C:\a\TeacherNotebook.exe");
     }
 }

@@ -78,7 +78,7 @@ function StudentChips({ value, onChange, roster }: { value: PlanStudent[]; onCha
               addTyped();
             }
           }}
-          placeholder="이름 입력 (예: 김민수 또는 2-1 김민수)"
+          placeholder="이름 입력 (예: 홍길동 또는 2-1 홍길동)"
         />
       </div>
       {matches.length > 0 && (

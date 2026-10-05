@@ -12,6 +12,16 @@ const check = (name, ok, detail = "") => {
   console.log(`${ok ? "✔" : "✘"} ${name}${detail ? " — " + detail : ""}`);
 };
 
+// '금요일까지'는 오늘부터 가장 가까운 금요일 (시험을 돌리는 날에 따라 달라진다)
+const pad = (n) => String(n).padStart(2, "0");
+const iso = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const now0 = new Date();
+const fri = new Date(now0.getFullYear(), now0.getMonth(), now0.getDate() + ((5 - now0.getDay() + 7) % 7));
+const FRI = iso(fri);
+const DAY_BEFORE_FRI = iso(new Date(fri.getFullYear(), fri.getMonth(), fri.getDate() - 1));
+const FRI_MON = iso(new Date(fri.getFullYear(), fri.getMonth(), fri.getDate() - 4));
+const FRI_SUN = iso(new Date(fri.getFullYear(), fri.getMonth(), fri.getDate() + 2));
+
 const child = launch(exe, { dataRoot });
 let app;
 try {
@@ -23,7 +33,7 @@ try {
   check("AI 모델 없음 안내가 보임", (await app.text()).includes("AI 모델이 아직 없습니다"));
 
   // 시나리오 E + A 원문: 모델 없이 기록
-  const A = "오늘 3교시 2-1 김민수 지각. 담임에게 알리고 금요일까지 보호자 연락.";
+  const A = "오늘 3교시 2-1 홍길동 지각. 담임에게 알리고 금요일까지 보호자 연락.";
   const t0 = Date.now();
   await app.type(".capture textarea", A);
   await app.click("기록", ".capture button");
@@ -53,12 +63,15 @@ try {
     return d.note.status === "manual" ? d : null;
   }, { label: "직접 분류 저장" });
   const chips = manual.note.chips;
-  check("학생 2-1 김민수 연결 + 출결 영역", chips.some((c) => c.kind === "student" && c.label === "2-1 김민수" && c.area === "attendance"), JSON.stringify(chips));
+  check("학생 2-1 홍길동 연결 + 출결 영역", chips.some((c) => c.kind === "student" && c.label === "2-1 홍길동" && c.area === "attendance"), JSON.stringify(chips));
   const task = chips.find((c) => c.kind === "task" && c.label === "보호자 연락");
-  check("보호자 연락 = 가까운 금요일(10/2) 기한 할 일", task?.date === "2026-10-02", JSON.stringify(task));
+  check(`보호자 연락 = 가까운 금요일(${FRI}) 기한 할 일`, task?.date === FRI, JSON.stringify(task));
   const tasks = await app.invoke("list_tasks", { filter: { state: "open" } });
   const contact = tasks.find((t) => t.title === "보호자 연락");
-  check("할 일에 알림 예약(1일 전 08:30)", contact?.next_reminder === "2026-10-01T08:30:00", contact?.next_reminder);
+  // 1일 전 08:30 이 이미 지났으면(시험을 그 뒤에 돌린 경우) 다음 알림이 없어야 한다
+  const remindAt = `${DAY_BEFORE_FRI}T08:30:00`;
+  const passed = new Date() >= new Date(remindAt);
+  check("할 일에 알림 예약(1일 전 08:30)", passed ? !contact?.next_reminder : contact?.next_reminder === remindAt, `${contact?.next_reminder ?? "없음"}${passed ? " (예약 시각이 이미 지남)" : ""}`);
   await sleep(500);
   await app.screenshot(path.join(shots, "04-note-manual-classified.png"));
 
@@ -88,7 +101,7 @@ try {
   check("연간: 학사력만 (월간·주간·기록 일정 없음)", yearT.includes("2학기 중간고사") && !yearT.includes("교과협의회") && !yearT.includes("3교시 공개수업 준비") && !yearT.includes("교육장 공감소통 방문"), yearT.join(","));
   check("월간: 학사력+월간+기록 일정 (주간 계획 없음)", monthT.includes("2학기 중간고사") && monthT.includes("교과협의회") && monthT.includes("교육장 공감소통 방문") && !monthT.includes("3교시 공개수업 준비"), monthT.join(","));
   check("주간: 모두 표시", ["2학기 중간고사", "교과협의회", "3교시 공개수업 준비", "교육장 공감소통 방문"].every((x) => weekT.includes(x)), weekT.join(","));
-  const weekOf = await titles("week", "2026-09-28", "2026-10-04");
+  const weekOf = await titles("week", FRI_MON, FRI_SUN);
   check("날짜 있는 할 일이 주간 달력에 표시", weekOf.includes("보호자 연락"), weekOf.join(","));
 
   // 일정표 화면 캡처 (주간: 10/12 주)
@@ -100,7 +113,7 @@ try {
   await app.click("월간", ".seg button");
   await sleep(700);
   await app.screenshot(path.join(shots, "06-calendar-month.png"));
-  await app.click("연간", ".seg button");
+  await app.click("학사력", ".seg button");
   await sleep(700);
   await app.screenshot(path.join(shots, "07-calendar-year.png"));
 
@@ -115,7 +128,7 @@ try {
   const nd2 = await app.invoke("create_note", { raw: D2 });
   const planD2 = await app.invoke("suggest_plan", { id: nd2.id });
   const dTask = planD2.items.find((i) => i.kind === "task");
-  check("시나리오 D: 후속조치만 할 일로 (업무 연결)", planD2.items.some((i) => i.kind === "duty") && dTask?.date === "2026-10-02" && dTask?.duty_id, JSON.stringify(planD2.items.map((i) => [i.kind, i.text, i.date])));
+  check("시나리오 D: 후속조치만 할 일로 (업무 연결)", planD2.items.some((i) => i.kind === "duty") && dTask?.date === FRI && dTask?.duty_id, JSON.stringify(planD2.items.map((i) => [i.kind, i.text, i.date])));
   await app.invoke("save_plan", { id: nd2.id, plan: planD2 });
   await app.nav("업무");
   await sleep(900);
@@ -136,7 +149,7 @@ try {
   await app.nav("학생");
   await sleep(800);
   await app.screenshot(path.join(shots, "10-students.png"));
-  await app.click("김민수", ".student-card");
+  await app.click("홍길동", ".student-card");
   await sleep(800);
   await app.evaluate(`window.__e2e.click('원문 보기')`);
   await sleep(400);

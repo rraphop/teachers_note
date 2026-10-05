@@ -3,6 +3,8 @@ import { api, errorText } from "../api";
 import { Empty, ErrorBox } from "../components/Fields";
 import { IconEdit, IconPlus, IconRecords, IconTrash } from "../components/Icons";
 import { confirmDialog, Modal } from "../components/Modal";
+import { DropOverlay, NEIS_ROSTER_TIP, NeisImportDialog, useExcelDrop } from "../components/NeisRosterImport";
+import { RosterTable } from "../components/RosterTable";
 import { fmtDate, fmtDateTime } from "../lib/format";
 import { AREA_ORDER, AREA_SHORT, areaLabel } from "../lib/labels";
 import { useLoad, useStore } from "../lib/store";
@@ -89,7 +91,7 @@ function ImportDialog({ onClose, onDone }: { onClose: () => void; onDone: () => 
       }
     >
       <p className="hint">한 줄에 한 명씩 적거나, 엑셀·NEIS 명단에서 학년·반·번호·이름 칸을 복사해 붙여 넣으세요.</p>
-      <pre className="example">{"2-1 3 김민수\n2학년 1반 7번 이서연\n2\t1\t12\t박지훈"}</pre>
+      <pre className="example">{"2-1 3 홍길동\n2학년 1반 7번 성춘향\n2\t1\t12\t이몽룡"}</pre>
       <textarea rows={10} value={text} onChange={(e) => setText(e.target.value)} placeholder="여기에 붙여 넣기" />
       {result && <pre className="result">{result}</pre>}
     </Modal>
@@ -191,6 +193,84 @@ function ObservationRow({ o, students }: { o: Observation; students: Student[] }
   );
 }
 
+function birthText(b: string | null): string {
+  if (!b) return "";
+  if (b.length === 10) return `${b.slice(0, 4)}년 ${Number(b.slice(5, 7))}월 ${Number(b.slice(8))}일`;
+  return `${Number(b.slice(0, 2))}월 ${Number(b.slice(3))}일`;
+}
+
+/** 학생 정보 (나이스 명렬표 항목). 주소·우편번호·주민등록번호는 눌러야 보인다. */
+function StudentInfo({ s, onChanged }: { s: Student; onChanged: () => void }) {
+  const { toast } = useStore();
+  const [show, setShow] = useState(false);
+  const plain: Array<[string, string]> = (
+    [
+      ["학생개인번호", s.student_no],
+      ["성별", s.gender],
+      ["생년월일", birthText(s.birthday)],
+      ["이전학적", s.prev_record],
+      ["비고", s.remark],
+    ] as Array<[string, string]>
+  ).filter(([, v]) => v);
+  const address = [s.postal_code && `(${s.postal_code})`, s.address].filter(Boolean).join(" ");
+  const hidden = !!(address || s.rrn);
+  if (!plain.length && !hidden) return null;
+  const clearRrn = async () => {
+    if (!(await confirmDialog("이 학생의 주민등록번호를 지울까요?", { okText: "지우기", danger: true }))) return;
+    try {
+      await api.setStudentField(s.id, "rrn", "");
+      onChanged();
+    } catch (e) {
+      toast(errorText(e), "error");
+    }
+  };
+  return (
+    <section className="panel student-info">
+      <h2>학생 정보</h2>
+      <dl className="spec">
+        {plain.map(([k, v]) => (
+          <div key={k} className="spec-row">
+            <dt>{k}</dt>
+            <dd>{v}</dd>
+          </div>
+        ))}
+        {hidden && !show && (
+          <div className="spec-row">
+            <dt>주소 등</dt>
+            <dd>
+              <button className="link" onClick={() => setShow(true)}>
+                눌러서 보기
+              </button>
+            </dd>
+          </div>
+        )}
+        {show && address && (
+          <div className="spec-row">
+            <dt>주소</dt>
+            <dd>{address}</dd>
+          </div>
+        )}
+        {show && s.rrn && (
+          <div className="spec-row">
+            <dt>주민등록번호</dt>
+            <dd>
+              {s.rrn}{" "}
+              <button className="link danger" onClick={() => void clearRrn()}>
+                지우기
+              </button>
+            </dd>
+          </div>
+        )}
+      </dl>
+      {show && (
+        <button className="link" onClick={() => setShow(false)}>
+          다시 가리기
+        </button>
+      )}
+    </section>
+  );
+}
+
 function StudentDetailView({ id, onBack, students }: { id: number; onBack: () => void; students: Student[] }) {
   const { navigate, toast, bump } = useStore();
   const d = useLoad(() => api.studentDetail(id), [id]);
@@ -241,6 +321,7 @@ function StudentDetailView({ id, onBack, students }: { id: number; onBack: () =>
         </div>
       </div>
       {s.memo && <p className="page-desc">{s.memo}</p>}
+      <StudentInfo s={s} onChanged={d.reload} />
       <div className="area-summary">
         <button className={`area-pill ${areaFilter === "all" ? "on" : ""}`} onClick={() => setAreaFilter("all")}>
           전체 <b>{d.data.observations.length}</b>
@@ -293,13 +374,32 @@ function StudentDetailView({ id, onBack, students }: { id: number; onBack: () =>
   );
 }
 
+const VIEW_KEY = "tn.students.view";
+
 export function StudentsPage() {
   const { params, bump } = useStore();
+  const [view, setViewState] = useState<"cards" | "roster">(() => {
+    try {
+      return window.localStorage.getItem(VIEW_KEY) === "roster" ? "roster" : "cards";
+    } catch {
+      return "cards";
+    }
+  });
+  const setView = (v: "cards" | "roster") => {
+    setViewState(v);
+    try {
+      window.localStorage.setItem(VIEW_KEY, v);
+    } catch {
+      /* 저장 못 해도 동작 */
+    }
+  };
   const [query, setQuery] = useState("");
   const [classId, setClassId] = useState<number | null>(null);
   const [selected, setSelected] = useState<number | null>(params.studentId ?? null);
   const [adding, setAdding] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [neis, setNeis] = useState<{ paths: string[]; seq: number } | null>(null);
+  const dragging = useExcelDrop((paths) => setNeis((cur) => ({ paths, seq: (cur?.seq ?? 0) + 1 })));
   const classes = useLoad(() => api.listClasses(), []);
   const list = useLoad(() => api.listStudents(query || null, classId), [query, classId]);
   const all = useLoad(() => api.listStudents(null, null), []);
@@ -307,19 +407,56 @@ export function StudentsPage() {
     if (params.studentId) setSelected(params.studentId);
   }, [params.studentId]);
 
-  if (selected !== null) return <div className="page"><StudentDetailView id={selected} onBack={() => setSelected(null)} students={all.data ?? []} /></div>;
-  return (
-    <div className="page">
-      <div className="page-head">
-        <h1>학생</h1>
-        <div className="head-actions">
-          <input className="search-input" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="이름·학급 찾기" />
-          <button onClick={() => setImporting(true)}>명단 붙여넣기</button>
-          <button className="primary" onClick={() => setAdding(true)}>
-            <IconPlus size={15} /> 학생 추가
+  const neisParts = (
+    <>
+      {dragging && <DropOverlay />}
+      {neis && <NeisImportDialog incoming={neis} onClose={() => setNeis(null)} />}
+    </>
+  );
+  if (selected !== null)
+    return (
+      <div className="page">
+        <StudentDetailView id={selected} onBack={() => setSelected(null)} students={all.data ?? []} />
+        {neisParts}
+      </div>
+    );
+  const head = (
+    <div className="page-head no-print">
+      <h1>학생</h1>
+      <div className="head-actions">
+        <div className="seg">
+          <button className={view === "cards" ? "on" : ""} onClick={() => setView("cards")}>
+            카드
+          </button>
+          <button className={view === "roster" ? "on" : ""} onClick={() => setView("roster")}>
+            학급명렬표
           </button>
         </div>
+        {view === "cards" && <input className="search-input" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="이름·학급 찾기" />}
+        <button onClick={() => setImporting(true)}>명단 붙여넣기</button>
+        <button onClick={() => setNeis({ paths: [], seq: 0 })} title={NEIS_ROSTER_TIP}>
+          나이스 명렬표 가져오기
+        </button>
+        <button className="primary" onClick={() => setAdding(true)}>
+          <IconPlus size={15} /> 학생 추가
+        </button>
       </div>
+    </div>
+  );
+  if (view === "roster") {
+    return (
+      <div className="page">
+        {head}
+        <RosterTable onOpen={(id) => setSelected(id)} />
+        {adding && <StudentForm initial={null} onClose={() => setAdding(false)} onSaved={bump} />}
+        {importing && <ImportDialog onClose={() => setImporting(false)} onDone={bump} />}
+        {neisParts}
+      </div>
+    );
+  }
+  return (
+    <div className="page">
+      {head}
       <div className="class-filter">
         <button className={classId === null ? "on" : ""} onClick={() => setClassId(null)}>
           전체
@@ -333,7 +470,7 @@ export function StudentsPage() {
       {list.error && <ErrorBox error={list.error} onRetry={list.reload} />}
       {list.data && list.data.length === 0 && (
         <Empty title="학생이 없습니다.">
-          기록에 “2-1 김민수”처럼 학급과 이름을 적으면 자동으로 등록됩니다. 명단을 한 번에 붙여 넣을 수도 있습니다.
+          나이스에서 받은 명렬표 엑셀 파일을 가져오거나(이 화면에 끌어다 놓아도 됩니다), 명단을 붙여 넣으세요. 기록에 “2-1 홍길동”처럼 학급과 이름을 적어도 자동으로 등록됩니다.
         </Empty>
       )}
       <div className="student-grid">
@@ -360,6 +497,7 @@ export function StudentsPage() {
       </div>
       {adding && <StudentForm initial={null} onClose={() => setAdding(false)} onSaved={bump} />}
       {importing && <ImportDialog onClose={() => setImporting(false)} onDone={bump} />}
+      {neisParts}
     </div>
   );
 }

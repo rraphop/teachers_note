@@ -41,6 +41,11 @@ Copy-Item $exe $Pkg
 Copy-Item (Join-Path $Release 'WebView2Loader.dll') $Pkg
 Copy-Item -Recurse $runtimeSrc (Join-Path $Pkg 'runtime\llama.cpp')
 Copy-Item (Join-Path $Root 'packaging\README.txt') (Join-Path $Pkg 'README.txt')
+# 라이선스 (LICENSE.txt) 와 제3자 고지 (THIRD_PARTY_NOTICES.txt) — 메모장에서 바로 읽히게 BOM 붙은 UTF-8
+foreach ($n in 'LICENSE.txt', 'THIRD_PARTY_NOTICES.txt') {
+  $txt = [System.IO.File]::ReadAllText((Join-Path $Root $n), [System.Text.Encoding]::UTF8).Replace("`r`n", "`n").Replace("`n", "`r`n")
+  [System.IO.File]::WriteAllText((Join-Path $Pkg $n), $txt, (New-Object System.Text.UTF8Encoding($true)))
+}
 
 # 모델 카탈로그 (주소·크기·SHA-256·라이선스) 를 투명하게 공개
 & $exe --export-catalog (Join-Path $Pkg 'resources\model-catalog.json')
@@ -107,7 +112,7 @@ foreach ($name in $npmNames) {
 Step '4. 금지 파일 검사'
 $forbidden = Get-ChildItem $Pkg -Recurse -File | Where-Object { $_.Extension -in '.db', '.sqlite', '.sqlite3', '.gguf', '.part', '.db-wal', '.db-shm' -or $_.Name -in 'settings.json', 'notebook.db' }
 if ($forbidden) { throw "배포본에 들어가면 안 되는 파일: $($forbidden.FullName -join ', ')" }
-$bigText = Get-ChildItem $Pkg -Recurse -File -Include *.txt, *.json | Select-String -Pattern '김민수|학생부 원문' -List
+$bigText = Get-ChildItem $Pkg -Recurse -File -Include *.txt, *.json | Select-String -Pattern '홍길동|김민수|학생부 원문' -List
 if ($bigText) { throw "배포본 텍스트에 학생 예시 데이터가 들어 있습니다: $($bigText.Path -join ', ')" }
 
 Step '5. SHA-256 무결성 목록'
@@ -172,4 +177,78 @@ try {
 } finally {
   Remove-Item -Recurse -Force $moved -ErrorAction SilentlyContinue
 }
-Write-Host "`n완료: $Zip" -ForegroundColor Green
+
+Step '9. 파일 하나 버전 교무수첩(버전).exe (바탕화면에 두고 실행)'
+# 조립한 폴더 전체를 묶음(payload.zip)으로 만들고, 파일 목록과 SHA-256 을 실행기 안에 함께 넣는다
+$appVersion = ($meta.packages | Where-Object { $_.name -eq 'teacher-notebook' } | Select-Object -First 1).version
+$work = Join-Path $OutRoot '.single-work'
+if (Test-Path $work) { Remove-Item -Recurse -Force $work }
+New-Item -ItemType Directory -Force $work | Out-Null
+$payload = Join-Path $work 'payload.zip'
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+[System.IO.Compression.ZipFile]::CreateFromDirectory($Pkg, $payload, [System.IO.Compression.CompressionLevel]::Optimal, $false)
+$entries = foreach ($f in (Get-ChildItem $Pkg -Recurse -File | Sort-Object FullName)) {
+  [ordered]@{ path = $f.FullName.Substring($Pkg.Length + 1).Replace('\', '/'); size = $f.Length; sha256 = (Get-FileHash $f.FullName -Algorithm SHA256).Hash.ToLower() }
+}
+$manifestPath = Join-Path $work 'manifest.json'
+$manifestJson = [ordered]@{ version = $appVersion; main = 'TeacherNotebook.exe'; files = @($entries) } | ConvertTo-Json -Depth 4 -Compress
+[System.IO.File]::WriteAllText($manifestPath, $manifestJson, (New-Object System.Text.UTF8Encoding($false)))
+$env:TN_PAYLOAD = $payload
+$env:TN_MANIFEST = $manifestPath
+# cargo 는 현재 폴더에서 .cargo\config.toml 을 찾으므로 실행기 폴더에서 빌드한다
+Push-Location (Join-Path $Root 'launcher')
+try {
+  & cargo build --release --target $Target
+  if ($LASTEXITCODE -ne 0) { throw '실행기 빌드 실패' }
+} finally {
+  Pop-Location
+  Remove-Item Env:\TN_PAYLOAD, Env:\TN_MANIFEST -ErrorAction SilentlyContinue
+}
+# 파일 이름: 교무수첩(버전).exe — 버전은 화면 표시와 같이 "0.6.1" → "0.61", "0.6.0" → "0.6"
+$vp = $appVersion.Split('.')
+$dispVersion = if ($vp.Count -ge 3 -and $vp[2] -ne '0') { "$($vp[0]).$($vp[1])$($vp[2])" } else { "$($vp[0]).$($vp[1])" }
+$singleName = "교무수첩($dispVersion).exe"
+$single = Join-Path $OutRoot $singleName
+Copy-Item (Join-Path $Root "launcher\target\$Target\release\TeacherNotebook.exe") $single -Force
+Remove-Item -Recurse -Force $work
+$singleHash = (Get-FileHash $single -Algorithm SHA256).Hash.ToLower()
+[System.IO.File]::WriteAllText((Join-Path $OutRoot "$singleName.sha256"), "$singleHash  $singleName`r`n", (New-Object System.Text.UTF8Encoding($false)))
+Write-Host "파일 하나: $single ($([math]::Round((Get-Item $single).Length / 1MB, 1))MB) sha256=$singleHash"
+
+function Invoke-SingleTest($dataRoot, $label) {
+  $report = Join-Path $dataRoot "report-$([guid]::NewGuid().ToString('N')).json"
+  $env:TN_DATA_ROOT = $dataRoot
+  try {
+    $sw = [Diagnostics.Stopwatch]::StartNew()
+    $p = Start-Process -FilePath $single -ArgumentList @('--self-test', $report) -PassThru -WindowStyle Hidden
+    if (-not $p.WaitForExit(120000)) { $p.Kill(); throw "${label}: 시간 초과" }
+    $sw.Stop()
+    if (-not (Test-Path $report)) { throw "${label}: self-test 보고서가 없습니다 (종료 코드 $($p.ExitCode))" }
+    $r = Get-Content $report -Raw -Encoding UTF8 | ConvertFrom-Json
+    $want = Join-Path $dataRoot "program\$appVersion"
+    Write-Host "${label}: ok=$($r.ok) runtime=$($r.runtime_found) $([math]::Round($sw.Elapsed.TotalSeconds, 1))초 exe_dir=$($r.exe_dir)"
+    if (-not $r.ok -or -not $r.runtime_found) { throw "${label}: self-test 실패" }
+    if (-not $r.exe_dir.StartsWith($want)) { throw "${label}: 풀린 위치가 다릅니다: $($r.exe_dir)" }
+  } finally {
+    Remove-Item Env:\TN_DATA_ROOT -ErrorAction SilentlyContinue
+  }
+}
+$sroot = Join-Path $env:TEMP ("tn-single-" + [guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Force $sroot | Out-Null
+try {
+  Invoke-SingleTest $sroot '처음 실행(풀기)'
+  Invoke-SingleTest $sroot '두 번째 실행(검사만)'
+  # 풀린 파일이 망가지면 다시 푼다
+  Remove-Item (Join-Path $sroot "program\$appVersion\WebView2Loader.dll")
+  Set-Content -Path (Join-Path $sroot "program\$appVersion\README.txt") -Value 'tampered' -Encoding ascii
+  Invoke-SingleTest $sroot '손상 뒤 다시 풀기'
+  # 지난 버전 폴더는 정리한다
+  $old = Join-Path $sroot 'program\0.0.1'
+  New-Item -ItemType Directory -Force $old | Out-Null
+  Invoke-SingleTest $sroot '지난 버전 정리'
+  if (Test-Path $old) { throw '지난 버전 폴더를 정리하지 못했습니다' }
+  Write-Host '파일 하나 버전 검사: 모두 통과'
+} finally {
+  Remove-Item -Recurse -Force $sroot -ErrorAction SilentlyContinue
+}
+Write-Host "`n완료: $Zip`n      $single" -ForegroundColor Green

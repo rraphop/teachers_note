@@ -26,10 +26,10 @@ const SYSTEM: &str = "너는 중학교 교사의 업무 메모를 정리하는 �
 9. summary는 메모를 40자 안으로 줄인 것이다. 메모에 없는 말은 쓰지 않는다.
 
 kind: student(학생 관찰), task(할 일), event(일정), duty(담당업무 기록), memo(기타)
-area: attendance(출결), subject(교과·수업), autonomous(자율활동), career(진로), volunteer(봉사), club(동아리), behavior(행동특성), none(학생 관찰이 아님)";
+area: attendance(출결), subject(교과·수업), autonomous(자율·자치활동), career(진로), volunteer(봉사), club(동아리), behavior(행동특성), free_semester(자유학기: 주제선택·진로탐색·예술체육 활동), none(학생 관찰이 아님)";
 
-const EXAMPLE_IN: &str = "어제 1-3 박서준 조퇴함. 다음 주 월요일까지 진단서 받기. 11월 3일 학부모 공개수업";
-const EXAMPLE_OUT: &str = r#"{"summary":"1-3 박서준 조퇴, 진단서 받기, 학부모 공개수업","items":[{"kind":"student","text":"어제 1-3 박서준 조퇴함","students":["박서준"],"area":"attendance","duty":0,"date":"어제"},{"kind":"task","text":"다음 주 월요일까지 진단서 받기","students":["박서준"],"area":"none","duty":0,"date":"다음 주 월요일까지"},{"kind":"event","text":"11월 3일 학부모 공개수업","students":[],"area":"none","duty":0,"date":"11월 3일"}]}"#;
+const EXAMPLE_IN: &str = "어제 1-3 임꺽정 조퇴함. 다음 주 월요일까지 진단서 받기. 11월 3일 학부모 공개수업";
+const EXAMPLE_OUT: &str = r#"{"summary":"1-3 임꺽정 조퇴, 진단서 받기, 학부모 공개수업","items":[{"kind":"student","text":"어제 1-3 임꺽정 조퇴함","students":["임꺽정"],"area":"attendance","duty":0,"date":"어제"},{"kind":"task","text":"다음 주 월요일까지 진단서 받기","students":["임꺽정"],"area":"none","duty":0,"date":"다음 주 월요일까지"},{"kind":"event","text":"11월 3일 학부모 공개수업","students":[],"area":"none","duty":0,"date":"11월 3일"}]}"#;
 
 pub fn schema() -> Value {
     json!({
@@ -45,7 +45,7 @@ pub fn schema() -> Value {
                         "kind": { "type": "string", "enum": ["student", "task", "event", "duty", "memo"] },
                         "text": { "type": "string", "maxLength": 200 },
                         "students": { "type": "array", "maxItems": 10, "items": { "type": "string", "maxLength": 20 } },
-                        "area": { "type": "string", "enum": ["attendance", "subject", "autonomous", "career", "volunteer", "club", "behavior", "none"] },
+                        "area": { "type": "string", "enum": ["attendance", "subject", "autonomous", "career", "volunteer", "club", "behavior", "free_semester", "none"] },
                         "duty": { "type": "integer", "minimum": 0, "maximum": 50 },
                         "date": { "type": "string", "maxLength": 30 }
                     },
@@ -63,15 +63,19 @@ fn duty_block(duties: &[DutyEntry]) -> String {
     if duties.is_empty() {
         return "담당업무 목록: (등록된 업무 없음 — duty는 항상 0)".to_string();
     }
-    let mut s = String::from("담당업무 목록:\n");
+    let mut s = String::from("담당업무 목록 (번호. 업무명 — 세부업무):\n");
     for (i, d) in duties.iter().enumerate() {
-        s.push_str(&format!("{}. {}", i + 1, d.label()));
-        let guide = d.guide.trim();
-        if !guide.is_empty() {
-            s.push_str(&format!(" — {}", text::truncate_chars(guide, 120)));
+        s.push_str(&format!("{}. {}", i + 1, d.name));
+        let detail = d.detail.trim();
+        if !detail.is_empty() {
+            s.push_str(&format!(" — {}", text::truncate_chars(&detail.replace('\n', ", "), 200)));
+        }
+        let extra: Vec<&str> = [d.guide.trim()].into_iter().filter(|x| !x.is_empty()).collect();
+        if !extra.is_empty() {
+            s.push_str(&format!(", {}", extra.join(", ")));
         }
         if !d.keywords.is_empty() {
-            s.push_str(&format!(" (핵심어: {})", d.keywords.join(", ")));
+            s.push_str(&format!(", {}", d.keywords.join(", ")));
         }
         s.push('\n');
     }
@@ -158,16 +162,17 @@ pub fn classify_note(backend: &dyn ChatBackend, raw: &str, ctx: &Ctx, timeout: D
     Ok(ClassifyOutcome { plan, raw_output: raw_outputs.join("\n") })
 }
 
-pub fn draft_body(area: Area, observations: &[String]) -> Value {
+pub fn draft_body(area: Area, subject: &str, observations: &[String]) -> Value {
     let list = observations.iter().map(|o| format!("- {o}")).collect::<Vec<_>>().join("\n");
+    let what = if subject.trim().is_empty() { area.label().to_string() } else { format!("{}({})", area.label(), subject.trim()) };
+    let limit = area.char_limit().map(|n| format!("\n5. {n}자를 넘지 않는다.")).unwrap_or_default();
     let system = format!(
-        "너는 교사의 학생부 기재를 돕는 도우미다. 아래 관찰 기록에 적힌 사실만 사용해 '{}' 문장 초안을 쓴다.
+        "너는 교사의 학생부 기재를 돕는 도우미다. 아래 참고자료(교사의 관찰 기록)에 적힌 사실만 사용해 '{what}' 문장 초안을 쓴다.
 규칙
-1. 관찰 기록에 없는 활동, 성과, 성격, 평가, 칭찬을 덧붙이지 않는다.
+1. 참고자료에 없는 활동, 성과, 성격, 평가, 칭찬을 덧붙이지 않는다.
 2. 학생 이름은 쓰지 않는다.
 3. 문장은 '~함', '~임', '~보임'처럼 끝낸다.
-4. 기록이 적으면 짧게 쓴다. 초안 문장만 출력한다.",
-        area.label()
+4. 기록이 적으면 짧게 쓴다. 초안 문장만 출력한다.{limit}"
     );
     json!({
         "messages": [

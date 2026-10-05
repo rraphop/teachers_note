@@ -26,6 +26,9 @@ function toAgenda(t: Task): AgendaItem {
     note_id: t.note_id,
     duty_label: t.duty_label,
     layer: null,
+    memo: "",
+    day_kind: "",
+    day_color: null,
   };
 }
 

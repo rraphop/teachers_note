@@ -20,11 +20,26 @@ pub enum Area {
     Volunteer,
     Club,
     Behavior,
+    /// 자유학기활동 (진로탐색·주제선택·예술체육·동아리)
+    FreeSemester,
+    /// 일상생활 활동상황 (특수교육 기본 교육과정)
+    Daily,
     None,
 }
 
 impl Area {
-    pub const ALL: [Area; 7] = [
+    /// 학생부 자료 화면의 영역 7개 (수정목록 순서: 창체 자율·자치, 교과, 행특, 동아리, 진로, 자유학기, 일상생활)
+    pub const RECORD_TABS: [Area; 7] = [
+        Area::Autonomous,
+        Area::Subject,
+        Area::Behavior,
+        Area::Club,
+        Area::Career,
+        Area::FreeSemester,
+        Area::Daily,
+    ];
+    /// 관찰 기록이 가질 수 있는 모든 영역 (학생부 영역 7개 + 출결·봉사)
+    pub const ALL: [Area; 9] = [
         Area::Attendance,
         Area::Subject,
         Area::Autonomous,
@@ -32,7 +47,18 @@ impl Area {
         Area::Volunteer,
         Area::Club,
         Area::Behavior,
+        Area::FreeSemester,
+        Area::Daily,
     ];
+    /// 2026학년도 중학교 학교생활기록부 기재요령 '영역별 입력 가능 최대 글자수' (한글 기준, 1자 = 3바이트)
+    pub fn char_limit(&self) -> Option<usize> {
+        match self {
+            Area::Autonomous | Area::Club | Area::Career | Area::Subject | Area::Attendance => Some(500),
+            Area::Behavior => Some(300),
+            Area::FreeSemester | Area::Daily => Some(1000),
+            Area::Volunteer | Area::None => None,
+        }
+    }
     pub fn as_str(&self) -> &'static str {
         match self {
             Area::Attendance => "attendance",
@@ -42,6 +68,8 @@ impl Area {
             Area::Volunteer => "volunteer",
             Area::Club => "club",
             Area::Behavior => "behavior",
+            Area::FreeSemester => "free_semester",
+            Area::Daily => "daily",
             Area::None => "none",
         }
     }
@@ -54,6 +82,8 @@ impl Area {
             "volunteer" => Area::Volunteer,
             "club" => Area::Club,
             "behavior" => Area::Behavior,
+            "free_semester" => Area::FreeSemester,
+            "daily" => Area::Daily,
             _ => Area::None,
         }
     }
@@ -61,11 +91,13 @@ impl Area {
         match self {
             Area::Attendance => "출결특기사항",
             Area::Subject => "교과특기사항",
-            Area::Autonomous => "창체 — 자율",
+            Area::Autonomous => "창체 — 자율·자치",
             Area::Career => "창체 — 진로",
             Area::Volunteer => "창체 — 봉사",
             Area::Club => "창체 — 동아리",
             Area::Behavior => "행동특성 및 종합의견",
+            Area::FreeSemester => "자유학기활동",
+            Area::Daily => "일상생활 활동상황",
             Area::None => "영역 미지정",
         }
     }
@@ -117,21 +149,24 @@ pub struct DutyEntry {
 
 impl DutyEntry {
     pub fn label(&self) -> String {
-        if self.detail.trim().is_empty() {
-            self.name.clone()
-        } else {
-            format!("{} / {}", self.name, self.detail)
+        match self.detail.split([',', '\n', ';']).map(str::trim).find(|s| !s.is_empty()) {
+            Some(first) if first.chars().count() <= 20 => format!("{} / {}", self.name, first),
+            _ => self.name.clone(),
         }
     }
-    /// 분류에 쓰는 핵심어: 업무명, 세부업무(와 그 안의 3글자 이상 낱말), 교사가 적은 핵심어
+    /// AI 없이도 쓰는 분류 낱말: 업무명과, 세부업무를 쉼표로 나눈 짧은 낱말·구(12글자 이하)와 그 안의 3글자 이상 낱말.
+    /// 긴 설명 문장은 AI가 읽고 판단한다 (문장 속 흔한 낱말로 잘못 분류하지 않도록 규칙에는 쓰지 않는다).
     pub fn match_terms(&self) -> Vec<String> {
-        const GENERIC: [&str; 16] = [
-            "관리", "업무", "담당", "운영", "계획", "지원", "협조", "보고서", "계획서", "추진", "관련", "전반", "기타", "총괄", "업무지원", "행정",
+        const GENERIC: [&str; 18] = [
+            "관리", "업무", "담당", "운영", "계획", "지원", "협조", "보고서", "계획서", "추진", "관련", "전반", "기타", "총괄", "업무지원", "행정", "교육청", "학교",
         ];
         let mut v: Vec<String> = Vec::new();
         for t in [self.name.as_str(), self.detail.as_str()] {
-            for part in t.split(['/', ',', '·', '(', ')']) {
-                let p = part.trim();
+            for part in t.split(['/', ',', '·', '(', ')', '\n', ';', '，']) {
+                let p = part.trim().trim_end_matches(['.', '。']);
+                if p.chars().count() > 12 {
+                    continue;
+                }
                 if p.chars().count() >= 2 && !GENERIC.contains(&p) {
                     v.push(p.to_string());
                 }
@@ -164,6 +199,8 @@ pub struct StudentMention {
     pub roster_id: Option<i64>,
     /// 동명이인 후보 (확정 못 함)
     pub candidates: Vec<i64>,
+    /// 원문에 적은 학급이 명렬표와 달라 명렬표를 따랐을 때, 원문에 적은 학급 (교사 확인용)
+    pub written_class: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -227,13 +264,15 @@ static RE_OBLIGATION: Lazy<Regex> = Lazy::new(|| {
 });
 static RE_PAST: Lazy<Regex> = Lazy::new(|| {
     // '완료', '마감'은 "금요일까지 완료"처럼 앞으로 할 일에도 쓰이므로 과거 표지로 보지 않는다.
-    // 개조식 끝맺음 "~옴(왔음)·~봄·~줌·~냄·~씀"도 이미 있었던 일이다 ("보호자 전화 옴").
+    // 개조식 끝맺음 "~옴(왔음)·~봄·~줌·~냄·~씀"도 이미 있었던 일이다 ("보호자 전화 옴"). "수업중 잠 → 지도함"의 '잠'도 그렇다.
     // 단, "봄 소풍", "줌 회의"와 헷갈리지 않도록 새 끝맺음은 절 끝에 올 때만 인정한다.
-    Regex::new(r"(었|았|였|했|됐|렸|쳤|냈|줬|웠|혔|켰|셨|왔|봤|갔)(다|음|습니다|어요|고|으며|는데|지만|을|던)|(함|됨|했음|하였음|끝냄|끝남)(\s|[.,!?)]|$)|[가-힣]\s?(옴|봄|줌|냄|씀)\s*([.,!?)]|$)|받았|드렸|주었|하였").unwrap()
+    Regex::new(r"(었|았|였|했|됐|렸|쳤|냈|줬|웠|혔|켰|셨|왔|봤|갔)(다|음|습니다|어요|고|으며|는데|지만|을|던)|(함|됨|했음|하였음|끝냄|끝남)(\s|[.,!?)]|$)|[가-힣]\s?(옴|봄|줌|냄|씀)\s*([.,!?)→]|$)|(?:^|\s)잠\s*(?:[.,!?)→]|$)|받았|드렸|주었|하였").unwrap()
 });
 
 static AREA_RULES: Lazy<Vec<(Area, Regex)>> = Lazy::new(|| {
     vec![
+        (Area::FreeSemester, Regex::new(r"자유학기|주제\s*선택|진로\s*탐색\s*활동|예술\s*[·ㆍ]?\s*체육\s*활동").unwrap()),
+        (Area::Daily, Regex::new(r"일상\s*생활").unwrap()),
         (Area::Club, Regex::new(r"동아리").unwrap()),
         (Area::Volunteer, Regex::new(r"봉사").unwrap()),
         (Area::Career, Regex::new(r"진로|장래|꿈|희망\s*직업|직업\s*체험|진학|적성|진로\s*탐색|진로\s*체험|진로\s*상담").unwrap()),
@@ -248,9 +287,17 @@ static AREA_RULES: Lazy<Vec<(Area, Regex)>> = Lazy::new(|| {
     ]
 });
 
-static RE_CLASS_NAME: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"(\d)\s*(?:-|–|학년\s*)\s*(\d{1,2})\s*반?\s*(?:(\d{1,2})\s*번\s*)?([가-힣]{2,6})").unwrap()
+/// 학년·학급 표기: "2-1", "2학년 1반", "2학년1반", "2학년", "2년" (+ "3번")
+static RE_CLASS_CTX: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"(\d)\s*(?:[-–]\s*(\d{1,2})\s*반?|학년\s*(?:(\d{1,2})\s*반)?|년\s*(?:(\d{1,2})\s*반)?)\s*(?:(\d{1,2})\s*번)?").unwrap()
 });
+static RE_NAME_TOKEN: Lazy<Regex> = Lazy::new(|| Regex::new(r"^[가-힣]{2,8}").unwrap());
+
+/// 이름 뒤에 붙는 조사 (긴 것부터)
+const NAME_PARTICLES: [&str; 27] = [
+    "에게서", "에게", "한테", "께서", "이랑", "이가", "이는", "이를", "이의", "이도", "이와", "하고", "랑", "가", "이", "은", "는", "을", "를", "의",
+    "와", "과", "도", "만", "께", "에", "로",
+];
 
 const NAME_STOPWORDS: [&str; 30] = [
     "학생", "전체", "모두", "담임", "교실", "친구", "아이", "학급", "교과", "수업", "남학생", "여학생", "학부모", "보호자",
@@ -269,7 +316,7 @@ fn skip_chars(s: &str, n: usize) -> String {
     s.chars().skip(n).collect()
 }
 
-/// "김민수가", "김민수지각" 같은 토큰에서 이름만 남긴다.
+/// "홍길동가", "홍길동지각" 같은 토큰에서 이름만 남긴다.
 pub fn clean_name(token: &str) -> Option<String> {
     let mut t = token.trim().to_string();
     if t.is_empty() {
@@ -296,7 +343,7 @@ pub fn clean_name(token: &str) -> Option<String> {
         // 3글자 이름의 끝 글자가 흔히 쓰는 조사면 떼되, 이름에 흔한 '은', '이'는 그대로 둔다
         let last = t.chars().last().unwrap_or(' ');
         if ['가', '는', '를', '의', '도', '랑', '와'].contains(&last) && NAME_TAIL_WORDS.iter().all(|w| !t.contains(w)) {
-            // "민수가"(이름 2글자 + 조사) 가능성: 성으로 시작하지 않으면 뗀다
+            // "길동이가"(이름 2글자 + 조사) 가능성: 성으로 시작하지 않으면 뗀다
             if !is_common_surname(t.chars().next().unwrap_or(' ')) {
                 t = take_chars(&t, 2);
             }
@@ -327,56 +374,211 @@ pub fn is_common_surname(c: char) -> bool {
     "김이박최정강조윤장임한오서신권황안송류유전홍고문양손배백허남심노하곽성차주우구민진나지엄채원천방공현함변염여추도소석선설마길연위표명기반라왕금옥육인맹제모탁국어은편용예경봉사부".contains(c)
 }
 
+fn is_hangul(c: char) -> bool {
+    ('가'..='힣').contains(&c)
+}
+
+/// 이름이 여기서 끝나는가. 두 글자 이름은 뒤가 공백·문장부호·조사(+공백)로 끊길 때만 이름으로 본다
+/// ("가나다라" 속의 "가나"를 이름으로 보지 않도록). 세 글자 이상은 그대로 인정한다 ("홍길동지각").
+fn name_ends_here(text: &str, end: usize, name_len: usize) -> bool {
+    let rest = &text[end..];
+    let Some(next) = rest.chars().next() else { return true };
+    if !is_hangul(next) || name_len >= 3 {
+        return true;
+    }
+    NAME_PARTICLES.iter().any(|p| rest.strip_prefix(p).is_some_and(|after| after.chars().next().is_none_or(|c| !is_hangul(c))))
+}
+
+/// 학년 → 학급: 그 학년의 학급이 하나뿐이면 그 학급 ("1학년" = 1-1)
+fn grade_to_class(grade: i64, roster: &[RosterEntry]) -> Option<String> {
+    let labels: std::collections::BTreeSet<&str> = roster
+        .iter()
+        .filter_map(|r| r.class_label.as_deref())
+        .filter(|l| l.split('-').next().and_then(|g| g.parse::<i64>().ok()) == Some(grade))
+        .collect();
+    if labels.len() == 1 { labels.into_iter().next().map(String::from) } else { None }
+}
+
+fn label_grade(label: &str) -> Option<i64> {
+    label.split('-').next()?.parse().ok()
+}
+
+/// 명단에서 이 자리에 시작하는 이름 (긴 이름 먼저)
+fn roster_name_at<'a>(text: &str, pos: usize, names: &[&'a str]) -> Option<&'a str> {
+    names.iter().copied().find(|n| text[pos..].starts_with(n) && name_ends_here(text, pos + n.len(), char_len(n)))
+}
+
+/// 학급 표기 뒤의 이름을 명단과 맞춘다. 적은 학급에 없고 다른 학급에 한 명뿐이면 명렬표를 따르고 적은 학급을 남긴다.
+fn mention_in_class(
+    name: &str,
+    span: Span,
+    label: Option<&str>,
+    grade: i64,
+    number: Option<i64>,
+    roster: &[RosterEntry],
+) -> Option<StudentMention> {
+    let same_name: Vec<&RosterEntry> = roster.iter().filter(|r| r.name == name).collect();
+    // 번호가 맞는 학생이 있으면 그 학생들만
+    fn by_number(v: Vec<&RosterEntry>, number: Option<i64>) -> Vec<&RosterEntry> {
+        let f: Vec<&RosterEntry> = v.iter().copied().filter(|r| number.is_none() || r.number.is_none() || r.number == number).collect();
+        if f.is_empty() { v } else { f }
+    }
+    let in_ctx: Vec<&RosterEntry> = same_name
+        .iter()
+        .copied()
+        .filter(|r| match label {
+            Some(l) => r.class_label.as_deref() == Some(l),
+            None => r.class_label.as_deref().and_then(label_grade) == Some(grade),
+        })
+        .collect();
+    let in_ctx = by_number(in_ctx, number);
+    let mk = |roster_id, candidates, class_label: Option<String>, written: Option<String>| StudentMention {
+        span,
+        name: name.to_string(),
+        class_label,
+        number,
+        roster_id,
+        candidates,
+        written_class: written,
+    };
+    match in_ctx.len() {
+        1 => return Some(mk(Some(in_ctx[0].id), vec![], in_ctx[0].class_label.clone(), None)),
+        n if n > 1 => return Some(mk(None, in_ctx.iter().map(|r| r.id).collect(), label.map(String::from), None)),
+        _ => {}
+    }
+    // 적은 학급에는 없지만 명렬표의 다른 학급에 있는 학생
+    match same_name.len() {
+        1 => {
+            let r = same_name[0];
+            let written = label.map(String::from).unwrap_or_else(|| format!("{grade}학년"));
+            Some(mk(Some(r.id), vec![], r.class_label.clone(), Some(written)))
+        }
+        n if n > 1 => Some(mk(None, same_name.iter().map(|r| r.id).collect(), None, None)),
+        // 명단에 없으면 "성 + 이름" 형태일 때만 학생으로 본다 ("2-1 체육대회" 같은 오인 방지)
+        _ if plausible_full_name(name) => Some(mk(None, vec![], label.map(String::from), None)),
+        _ => None,
+    }
+}
+
 /// 원문 속 학생 언급을 찾는다.
+/// 1) 학급 표기 뒤의 이름들 ("2-1 홍길동", "1학년 홍길동, 김철수", "1년 가나") — 쉼표로 나열한 이름 모두에 학급을 붙인다
+/// 2) 명단에 있는 전체 이름 (학년이 없어도 명렬표에서 학급을 찾는다)
+/// 3) 성을 뺀 이름 ("길동이가 발표함") — 명단에서 하나로 정해질 때만
 pub fn find_students(text: &str, roster: &[RosterEntry]) -> Vec<StudentMention> {
     let mut out: Vec<StudentMention> = Vec::new();
+    let mut names: Vec<&str> = roster.iter().map(|r| r.name.as_str()).filter(|n| char_len(n) >= 2).collect();
+    names.sort_by(|a, b| char_len(b).cmp(&char_len(a)).then(a.cmp(b)));
+    names.dedup();
 
-    // 1) "2-1 김민수", "2학년 1반 3번 김민수" 형태
-    for m in RE_CLASS_NAME.captures_iter(text) {
+    // 1) 학급 표기 뒤의 이름
+    for m in RE_CLASS_CTX.captures_iter(text) {
         let whole = m.get(0).unwrap();
-        let Some(name) = clean_name(&m[4]) else { continue };
+        // "2026학년도", "10-2"(날짜) 같은 경우는 학급 표기가 아니다
+        if text[..whole.start()].chars().next_back().is_some_and(|c| c.is_ascii_digit() || c == '.' || c == '/')
+            || text[whole.end()..].starts_with('도')
+        {
+            continue;
+        }
         let grade: i64 = m[1].parse().unwrap_or(0);
-        let class_no: i64 = m[2].parse().unwrap_or(0);
-        if !(1..=6).contains(&grade) || !(1..=30).contains(&class_no) {
+        let class_no: Option<i64> = m.get(2).or(m.get(3)).or(m.get(4)).and_then(|x| x.as_str().parse().ok());
+        if !(1..=6).contains(&grade) || class_no.is_some_and(|c| !(1..=30).contains(&c)) {
             continue;
         }
-        let label = format!("{grade}-{class_no}");
-        let number = m.get(3).and_then(|x| x.as_str().parse::<i64>().ok());
-        let name_start = m.get(4).unwrap().start();
-        let span = Span { start: whole.start(), end: name_start + name.len() };
-        let matches: Vec<&RosterEntry> = roster
-            .iter()
-            .filter(|r| r.name == name && r.class_label.as_deref() == Some(label.as_str()))
-            .filter(|r| number.is_none() || r.number.is_none() || r.number == number)
-            .collect();
-        let (roster_id, candidates) = match matches.len() {
-            1 => (Some(matches[0].id), vec![]),
-            0 => (None, vec![]),
-            _ => (None, matches.iter().map(|r| r.id).collect()),
+        let number = m.get(5).and_then(|x| x.as_str().parse::<i64>().ok());
+        let label = match class_no {
+            Some(c) => Some(format!("{grade}-{c}")),
+            None => grade_to_class(grade, roster),
         };
-        // 명단에 없으면 "성 + 이름" 형태일 때만 학생으로 본다 ("2-1 체육대회" 같은 오인 방지)
-        if roster_id.is_none() && candidates.is_empty() && !plausible_full_name(&name) {
-            continue;
+        let mut pos = whole.end();
+        let mut first = true;
+        let mut after_comma = false;
+        loop {
+            let at = pos + (text[pos..].len() - text[pos..].trim_start_matches([' ', '\t']).len());
+            // 명단의 이름 → 명단에 없는 사람 이름 순으로
+            let (name, name_end, token_end) = if let Some(n) = roster_name_at(text, at, &names) {
+                let mut te = at + n.len();
+                if let Some(p) = NAME_PARTICLES.iter().find(|p| text[te..].starts_with(*p)) {
+                    te += p.len();
+                }
+                (n.to_string(), at + n.len(), te)
+            } else if let Some(tok) = RE_NAME_TOKEN.find(&text[at..]).filter(|_| first || after_comma) {
+                // 명단에 없는 이름은 학급 바로 뒤나 쉼표 뒤에서만 받는다 ("1학년 홍길동 지도함"의 '지도함'을 이름으로 보지 않도록)
+                let Some(n) = clean_name(tok.as_str()) else { break };
+                if !tok.as_str().starts_with(n.as_str()) || !plausible_full_name(&n) {
+                    break;
+                }
+                (n.clone(), at + n.len(), at + tok.end())
+            } else {
+                break;
+            };
+            let span = Span { start: if first { whole.start() } else { at }, end: name_end };
+            if out.iter().any(|o| o.span.overlaps(&span)) {
+                break;
+            }
+            let Some(mention) = mention_in_class(&name, span, label.as_deref(), grade, if first { number } else { None }, roster) else {
+                break;
+            };
+            out.push(mention);
+            first = false;
+            // 다음 이름: 쉼표·가운뎃점 뒤, 또는 공백 뒤 (붙어 있으면 끝)
+            let r = &text[token_end..];
+            let r2 = r.trim_start_matches([' ', '\t']);
+            if let Some(after) = r2.strip_prefix([',', '，', '·', '、']) {
+                pos = text.len() - after.len();
+                after_comma = true;
+            } else if r2.len() < r.len() {
+                pos = token_end;
+                after_comma = false;
+            } else {
+                break;
+            }
         }
-        out.push(StudentMention { span, name, class_label: Some(label), number, roster_id, candidates });
+    }
+    // 1-2) 학급과 함께 처음 적은 명단 밖 학생을 같은 기록에서 이름만으로 다시 부른 경우 ("1-1 전우치 …. 전우치 …")
+    let introduced: Vec<(String, Option<String>)> = {
+        let mut v: Vec<(String, Option<String>)> = Vec::new();
+        for m in out.iter().filter(|m| m.roster_id.is_none() && m.candidates.is_empty() && m.class_label.is_some()) {
+            if !v.iter().any(|(n, _)| *n == m.name) && !names.contains(&m.name.as_str()) {
+                v.push((m.name.clone(), m.class_label.clone()));
+            }
+        }
+        v
+    };
+    for (name, label) in &introduced {
+        for (pos, _) in text.match_indices(name.as_str()) {
+            let span = Span { start: pos, end: pos + name.len() };
+            if out.iter().any(|o| o.span.overlaps(&span))
+                || text[..pos].chars().next_back().is_some_and(is_hangul)
+                || !name_ends_here(text, span.end, char_len(name))
+            {
+                continue;
+            }
+            out.push(StudentMention {
+                span,
+                name: name.clone(),
+                class_label: label.clone(),
+                number: None,
+                roster_id: None,
+                candidates: vec![],
+                written_class: None,
+            });
+        }
     }
 
-    // 2) 명단에 있는 이름 (전체 이름)
+    // 2) 명단에 있는 이름 (긴 이름 먼저, 두 글자 이름은 앞뒤가 끊길 때만)
     let mut by_name: std::collections::BTreeMap<&str, Vec<&RosterEntry>> = Default::default();
-    for r in roster {
+    for r in roster.iter().filter(|r| char_len(&r.name) >= 2) {
         by_name.entry(r.name.as_str()).or_default().push(r);
     }
-    for (name, entries) in &by_name {
-        if char_len(name) < 2 {
-            continue;
-        }
+    for name in &names {
+        let entries = &by_name[name];
         for (pos, _) in text.match_indices(name) {
             let span = Span { start: pos, end: pos + name.len() };
             if out.iter().any(|o| o.span.overlaps(&span)) {
                 continue;
             }
-            // 앞 글자가 한글이면 다른 낱말의 일부 ("박김민수" 같은 경우)로 보고 건너뛴다
-            if text[..pos].chars().next_back().is_some_and(|c| ('가'..='힣').contains(&c)) {
+            // 앞 글자가 한글이면 다른 낱말의 일부 ("박홍길동" 같은 경우)로 보고 건너뛴다
+            if text[..pos].chars().next_back().is_some_and(is_hangul) || !name_ends_here(text, span.end, char_len(name)) {
                 continue;
             }
             let (roster_id, candidates) = if entries.len() == 1 {
@@ -391,11 +593,12 @@ pub fn find_students(text: &str, roster: &[RosterEntry]) -> Vec<StudentMention> 
                 number: None,
                 roster_id,
                 candidates,
+                written_class: None,
             });
         }
     }
 
-    // 3) 성을 뺀 이름 ("민수가 발표함") — 명단에서 하나로 정해질 때만
+    // 3) 성을 뺀 이름 ("길동이가 발표함") — 명단에서 하나로 정해질 때만
     let mut given: std::collections::BTreeMap<String, Vec<&RosterEntry>> = Default::default();
     for r in roster {
         let n = char_len(&r.name);
@@ -410,7 +613,7 @@ pub fn find_students(text: &str, roster: &[RosterEntry]) -> Vec<StudentMention> 
             if out.iter().any(|o| o.span.overlaps(&span)) {
                 continue;
             }
-            if text[..pos].chars().next_back().is_some_and(|c| ('가'..='힣').contains(&c)) {
+            if text[..pos].chars().next_back().is_some_and(is_hangul) {
                 continue;
             }
             let (roster_id, candidates) = if entries.len() == 1 {
@@ -425,13 +628,13 @@ pub fn find_students(text: &str, roster: &[RosterEntry]) -> Vec<StudentMention> 
                 number: None,
                 roster_id,
                 candidates,
+                written_class: None,
             });
         }
     }
     out.sort_by_key(|m| m.span.start);
     out
 }
-
 /// 절 안에 실제 출결 사실이 적혀 있는가
 pub fn attendance_fact(clause: &str) -> Option<AttendanceKind> {
     for m in RE_ATTENDANCE.captures_iter(clause) {
@@ -529,10 +732,20 @@ pub fn area_hint(s: &str) -> Option<Area> {
     None
 }
 
+/// "OO중 교무부장", "OO고 교무부장"처럼 다른 학교 이름 바로 뒤에 온 낱말은 그 학교 선생님의 직함이다
+/// ("교육지원청 교무부장 회의"는 내 업무와 관련된 모임일 수 있어 학교 이름만 본다)
+static RE_ORG_BEFORE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"[가-힣A-Za-z○◯]{1,10}(?:중|고|초|여중|여고|중학교|고등학교|초등학교)\s*$").unwrap());
+
+/// 낱말이 원문에 '내 업무'로 쓰였는가: 다른 학교 이름 뒤에 붙은 직함으로만 나오면 아니다
+pub fn mentions_as_own(s: &str, term: &str) -> bool {
+    s.match_indices(term).any(|(pos, _)| !RE_ORG_BEFORE.is_match(&s[..pos]))
+}
+
 pub fn match_duties(s: &str, duties: &[DutyEntry]) -> Vec<i64> {
     let mut out = Vec::new();
     for d in duties {
-        if d.match_terms().iter().any(|t| s.contains(t.as_str())) {
+        if d.match_terms().iter().any(|t| mentions_as_own(s, t)) {
             out.push(d.id);
         }
     }
@@ -636,6 +849,10 @@ impl Analysis {
         if c.past || c.attendance.is_some() || c.action || !c.students.is_empty() {
             return false;
         }
+        // "오늘 3교시 수업중 잠 → 지도함"처럼 이미 있었던 일을 적은 문장의 오늘·지난 날짜는 일정이 아니다
+        if is_past(c.sentence_span.slice(&self.text)) && c.dates.iter().all(|d| d.date <= self.today) {
+            return false;
+        }
         c.dates.iter().any(|d| d.date >= self.today && !d.deadline)
     }
 }
@@ -686,7 +903,7 @@ mod tests {
 
     #[test]
     fn attendance_requires_real_fact() {
-        assert_eq!(attendance_fact("3교시 김민수 지각"), Some(AttendanceKind::Late));
+        assert_eq!(attendance_fact("3교시 홍길동 지각"), Some(AttendanceKind::Late));
         assert_eq!(attendance_fact("질병 결석 처리"), Some(AttendanceKind::Absent));
         assert_eq!(attendance_fact("5교시 결과"), Some(AttendanceKind::ClassAbsence));
         assert_eq!(attendance_fact("교외체험학습 신청서 받음"), Some(AttendanceKind::Recognized));
@@ -702,40 +919,106 @@ mod tests {
 
     #[test]
     fn names_with_class() {
-        let m = find_students("오늘 3교시 2-1 김민수 지각.", &[]);
+        let m = find_students("오늘 3교시 2-1 홍길동 지각.", &[]);
         assert_eq!(m.len(), 1);
-        assert_eq!(m[0].name, "김민수");
+        assert_eq!(m[0].name, "홍길동");
         assert_eq!(m[0].class_label.as_deref(), Some("2-1"));
-        let m = find_students("2학년 3반 12번 이서연은 발표를 잘함", &[]);
-        assert_eq!(m[0].name, "이서연");
+        let m = find_students("2학년 3반 12번 성춘향은 발표를 잘함", &[]);
+        assert_eq!(m[0].name, "성춘향");
         assert_eq!(m[0].class_label.as_deref(), Some("2-3"));
         assert_eq!(m[0].number, Some(12));
-        let m = find_students("2-1 김민수지각", &[]);
-        assert_eq!(m[0].name, "김민수");
+        let m = find_students("2-1 홍길동지각", &[]);
+        assert_eq!(m[0].name, "홍길동");
         let m = find_students("2-1 학생들 전체 지도", &[]);
         assert!(m.is_empty());
+    }
+
+    /// 학년마다 한 반인 학교의 명렬표 (가짜 이름) + 학급 구성 항목
+    fn one_class_school() -> Vec<RosterEntry> {
+        let s = |id, name: &str, l: &str, n| RosterEntry { id, name: name.into(), class_label: Some(l.into()), number: Some(n) };
+        let c = |l: &str| RosterEntry { id: 0, name: String::new(), class_label: Some(l.into()), number: None };
+        vec![s(1, "심청", "1-1", 1), s(2, "전우치", "1-1", 2), s(3, "장화", "2-1", 1), c("1-1"), c("2-1"), c("3-1")]
+    }
+
+    fn ids(m: &[StudentMention]) -> Vec<(Option<i64>, Option<String>)> {
+        m.iter().map(|x| (x.roster_id, x.class_label.clone())).collect()
+    }
+
+    #[test]
+    fn grade_context_and_comma_lists() {
+        let r = one_class_school();
+        let both = vec![(Some(1), Some("1-1".to_string())), (Some(2), Some("1-1".to_string()))];
+        assert_eq!(ids(&find_students("1학년 심청, 전우치 수업 중 잠", &r)), both);
+        assert_eq!(ids(&find_students("심청 전우치 지각", &r)), both, "학년 없이도 명렬표에서 학급을 찾는다");
+        for t in ["1학년 심청 발표", "1학년1반 심청 발표", "1학년 1반 심청 발표", "1-1 심청 발표", "1년 심청 발표"] {
+            assert_eq!(ids(&find_students(t, &r)), vec![(Some(1), Some("1-1".to_string()))], "{t}");
+        }
+        // 명단에 없는 학생도 학년만 적으면 그 학년의 하나뿐인 반으로
+        let m = find_students("3학년 이영희, 김영수 지각", &r);
+        assert_eq!(m.iter().map(|x| (x.name.as_str(), x.class_label.as_deref())).collect::<Vec<_>>(), vec![("이영희", Some("3-1")), ("김영수", Some("3-1"))]);
+        // 이름 뒤의 낱말을 이름으로 보지 않는다
+        let m = find_students("1학년 전우치 지도함", &r);
+        assert_eq!(m.len(), 1);
+        assert!(find_students("2026학년도 교육과정 계획", &r).is_empty());
+        assert!(find_students("10-2 11:00 회의", &r).is_empty());
+    }
+
+    #[test]
+    fn two_char_names_need_boundaries() {
+        let r = one_class_school();
+        assert!(find_students("심청기 발표", &r).is_empty(), "다른 낱말의 일부");
+        assert!(find_students("장화비 완료", &r).is_empty());
+        for t in ["심청 발표", "심청은 발표함", "심청이가 발표", "심청, 장화 청소", "(심청) 발표"] {
+            assert!(find_students(t, &r).iter().any(|m| m.roster_id == Some(1)), "{t}");
+        }
+    }
+
+    #[test]
+    fn written_class_differs_from_roster() {
+        let r = one_class_school();
+        let m = find_students("2학년 심청 지각", &r);
+        assert_eq!(m.len(), 1);
+        assert_eq!((m[0].roster_id, m[0].class_label.as_deref(), m[0].written_class.as_deref()), (Some(1), Some("1-1"), Some("2-1")));
+    }
+
+    #[test]
+    fn past_observation_is_not_event() {
+        assert!(is_past("수업중 잠 → 지도함"));
+        assert!(is_past("3교시 수업 중 잠."));
+        assert!(!is_past("잠자리 안전 교육"));
+        let a = analyze("오늘 3교시 수업중 잠 → 지도함", today(), &[], &[]);
+        assert!((0..a.clauses.len()).all(|i| !a.clause_is_event(i)));
+    }
+    #[test]
+    fn other_school_titles_are_not_my_duty() {
+        let duties = vec![DutyEntry { id: 7, name: "교무부장".into(), detail: "국제교류, 학사 운영".into(), guide: String::new(), keywords: vec![] }];
+        assert!(match_duties("OO중 교무부장 연락옴", &duties).is_empty());
+        assert!(match_duties("OO고 교무부장님과 통화함", &duties).is_empty());
+        assert_eq!(match_duties("OO교육지원청 교무부장 회의 안내", &duties), vec![7]);
+        assert_eq!(match_duties("교무부장 회의 자료 준비", &duties), vec![7]);
+        assert_eq!(match_duties("한일국제교류 컨설팅", &duties), vec![7]);
     }
 
     #[test]
     fn roster_and_homonyms() {
         let roster = vec![
-            RosterEntry { id: 1, name: "김민수".into(), class_label: Some("2-1".into()), number: Some(3) },
-            RosterEntry { id: 2, name: "김민수".into(), class_label: Some("2-3".into()), number: Some(5) },
-            RosterEntry { id: 3, name: "이서연".into(), class_label: Some("2-1".into()), number: Some(7) },
+            RosterEntry { id: 1, name: "홍길동".into(), class_label: Some("2-1".into()), number: Some(3) },
+            RosterEntry { id: 2, name: "홍길동".into(), class_label: Some("2-3".into()), number: Some(5) },
+            RosterEntry { id: 3, name: "성춘향".into(), class_label: Some("2-1".into()), number: Some(7) },
         ];
-        let m = find_students("2-1 김민수 지각", &roster);
+        let m = find_students("2-1 홍길동 지각", &roster);
         assert_eq!(m.len(), 1);
         assert_eq!(m[0].roster_id, Some(1));
-        let m = find_students("김민수 발표 우수", &roster);
+        let m = find_students("홍길동 발표 우수", &roster);
         assert_eq!(m[0].roster_id, None);
         assert_eq!(m[0].candidates, vec![1, 2]);
-        let m = find_students("서연이가 친구를 도와줌", &roster);
+        let m = find_students("춘향이가 친구를 도와줌", &roster);
         assert_eq!(m[0].roster_id, Some(3));
     }
 
     #[test]
     fn tasks_and_events() {
-        let t = "오늘 3교시 2-1 김민수 지각. 담임에게 알리고 금요일까지 보호자 연락.";
+        let t = "오늘 3교시 2-1 홍길동 지각. 담임에게 알리고 금요일까지 보호자 연락.";
         let a = analyze(t, today(), &[], &[]);
         assert_eq!(a.clauses.len(), 3);
         assert!(!a.clause_is_task(0));
@@ -792,7 +1075,19 @@ mod tests {
         }];
         assert_eq!(match_duties("2학기 학사일정 관리 회의", &duties), vec![7]);
         assert_eq!(match_duties("학사력 수정", &duties), vec![7]);
-        assert!(match_duties("김민수 지각", &duties).is_empty());
+        assert!(match_duties("홍길동 지각", &duties).is_empty());
+
+        // 세부업무 하나에 낱말·구·문장을 섞어 적은 경우: 짧은 낱말·구만 규칙에 쓰고, 긴 문장은 AI 몫
+        let merged = vec![DutyEntry {
+            id: 9,
+            name: "교무기획".into(),
+            detail: "학사일정 관리, 수업일수, 교육청에 학사일정 변경을 보고하고 교직원에게 안내하는 일".into(),
+            guide: String::new(),
+            keywords: vec![],
+        }];
+        assert_eq!(match_duties("수업일수 계산", &merged), vec![9]);
+        assert!(match_duties("교육청 공문 회신", &merged).is_empty(), "긴 문장 속 흔한 낱말로 분류하지 않는다");
+        assert_eq!(merged[0].label(), "교무기획 / 학사일정 관리");
     }
 
     #[test]

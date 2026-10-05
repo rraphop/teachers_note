@@ -11,11 +11,12 @@ import type { Duty, DutyInput, DutyLog, Task } from "../types";
 
 function DutyForm({ initial, onClose, onSaved }: { initial: Duty | null; onClose: () => void; onSaved: (id: number) => void }) {
   const { toast } = useStore();
+  // 세부업무 하나로 통일 (예전 '분류 설명'·'핵심어'는 0.2 에서 세부업무로 합쳐졌다)
   const [f, setF] = useState<DutyInput>({
     name: initial?.name ?? "",
-    detail: initial?.detail ?? "",
-    guide: initial?.guide ?? "",
-    keywords: initial?.keywords ?? "",
+    detail: [initial?.detail, initial?.guide, initial?.keywords].filter((x) => x && x.trim()).join(", "),
+    guide: "",
+    keywords: "",
     active: initial?.active ?? true,
   });
   const save = async () => {
@@ -58,25 +59,21 @@ function DutyForm({ initial, onClose, onSaved }: { initial: Duty | null; onClose
         </>
       }
     >
-      <div className="row gap">
-        <label className="field grow">
-          <span>업무명</span>
-          <input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="예: 교무기획" />
-        </label>
-        <label className="field grow">
-          <span>세부업무</span>
-          <input value={f.detail} onChange={(e) => setF({ ...f, detail: e.target.value })} placeholder="예: 학사일정 관리" />
-        </label>
-      </div>
       <label className="field">
-        <span>분류에 쓸 설명</span>
-        <textarea rows={3} value={f.guide} onChange={(e) => setF({ ...f, guide: e.target.value })} placeholder="예: 학사력 작성·변경, 수업일수, 교육청 학사일정 보고" />
-        <small className="hint">AI가 이 설명을 보고 기록이 이 업무에 해당하는지 판단합니다.</small>
+        <span>업무명</span>
+        <input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="예: 교무기획" />
       </label>
       <label className="field">
-        <span>핵심어 (쉼표로 구분, 선택)</span>
-        <input value={f.keywords} onChange={(e) => setF({ ...f, keywords: e.target.value })} placeholder="예: 학사력, 수업일수, 개학" />
-        <small className="hint">기록에 이 낱말이 있으면 AI가 없어도 이 업무로 제안합니다.</small>
+        <span>세부업무</span>
+        <textarea
+          rows={4}
+          value={f.detail}
+          onChange={(e) => setF({ ...f, detail: e.target.value })}
+          placeholder={"낱말, 구, 문장 어느 것이든 적어 주세요.\n예: 학사일정 관리, 학사력, 수업일수\n교육청에 학사일정 변경을 보고하고 교직원에게 안내함"}
+        />
+        <small className="hint">
+          AI가 이 내용을 읽고 기록이 이 업무에 해당하는지 판단합니다. 쉼표로 나눈 짧은 낱말(예: 학사력, 수업일수)은 AI가 없어도 분류에 쓰입니다.
+        </small>
       </label>
       <label className="check">
         <input type="checkbox" checked={f.active} onChange={(e) => setF({ ...f, active: e.target.checked })} /> 분류에 사용 (올해 맡은 업무)
@@ -103,6 +100,9 @@ function toAgendaTask(t: Task) {
     note_id: t.note_id,
     duty_label: null,
     layer: null,
+    memo: "",
+    day_kind: "",
+    day_color: null,
   };
 }
 
@@ -165,7 +165,7 @@ export function DutiesPage() {
       {duties.error && <ErrorBox error={duties.error} onRetry={duties.reload} />}
       {duties.data && duties.data.length === 0 && (
         <Empty title="등록한 담당업무가 없습니다.">
-          예: 업무명 “교무기획”, 세부업무 “학사일정 관리”, 설명 “학사력 작성·변경, 수업일수”
+          예: 업무명 “교무기획”, 세부업무 “학사일정 관리, 학사력, 수업일수, 교육청에 학사일정 변경 보고”
           <div>
             <button className="primary" onClick={() => setForm("new")}>
               담당업무 등록하기
@@ -182,7 +182,7 @@ export function DutiesPage() {
             <button key={d.id} className={`${sel === d.id ? "on" : ""} ${d.active ? "" : "inactive"}`} onClick={() => setSel(d.id)} title={d.active ? "" : "분류에 쓰지 않는 업무"}>
               <span className="duty-name">
                 <b>{d.name}</b>
-                {d.detail && <small>{d.detail}</small>}
+                {d.detail && <small>{d.detail.length > 24 ? `${d.detail.slice(0, 24)}…` : d.detail}</small>}
               </span>
               <span className="duty-counts">
                 <span className="count" title="업무 기록 수">기록 {d.log_count}</span>
@@ -196,11 +196,8 @@ export function DutiesPage() {
             <section className="panel duty-profile">
               <div className="row gap">
                 <div className="grow">
-                  <h2>
-                    {current.name} {current.detail && <span className="muted">/ {current.detail}</span>}
-                  </h2>
-                  {current.guide && <p className="small">{current.guide}</p>}
-                  {current.keywords && <p className="small muted">핵심어: {current.keywords}</p>}
+                  <h2>{current.name}</h2>
+                  {current.detail ? <p className="small pre-line">{current.detail}</p> : <p className="small muted">세부업무를 적으면 AI가 기록을 이 업무로 더 잘 분류합니다.</p>}
                 </div>
                 <button onClick={() => setForm(current)}>
                   <IconEdit size={15} /> 수정

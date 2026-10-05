@@ -236,6 +236,14 @@ pub struct EventDto {
     pub remind_text: String,
     pub next_reminder: Option<String>,
     pub created_at: String,
+    /// '' = 교사가 추가, 'neis' = 나이스에서 받은 학사력
+    pub ext_source: String,
+    /// holiday | closure | vacation | work ('' = 학사력이 아님)
+    pub day_kind: String,
+    /// 학년 태그 ("1,3", 빈 값 = 전체)
+    pub grades: String,
+    /// 목록에 보이지 않고 날짜 색만 칠함 (토요휴업일)
+    pub hidden: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -258,7 +266,7 @@ pub struct EventInput {
 pub const LAYERS: [&str; 4] = ["annual", "monthly", "weekly", "note"];
 
 const EVENT_COLS: &str = "id, layer, note_id, title, start_date, end_date, time, date_expr, memo, source, edited,
-    remind_enabled, remind_offsets, remind_time, remind_custom_at, created_at";
+    remind_enabled, remind_offsets, remind_time, remind_custom_at, created_at, ext_source, day_kind, grades, hidden";
 
 fn map_event(r: &rusqlite::Row) -> rusqlite::Result<EventDto> {
     let remind = spec_from_row(r.get(11)?, r.get(12)?, r.get(13)?, r.get(14)?);
@@ -278,6 +286,10 @@ fn map_event(r: &rusqlite::Row) -> rusqlite::Result<EventDto> {
         remind,
         next_reminder: None,
         created_at: r.get(15)?,
+        ext_source: r.get(16)?,
+        day_kind: r.get(17)?,
+        grades: r.get(18)?,
+        hidden: r.get::<_, i64>(19)? != 0,
     })
 }
 
@@ -313,6 +325,14 @@ fn check_event(input: &EventInput) -> AppResult<(String, String, String, Option<
     Ok((title, start, end, time))
 }
 
+/// 학사력이면 이름 규칙으로 종류(휴일·휴업일·방학·업무)를 정한다
+fn day_kind_of(conn: &Connection, layer: &str, title: &str) -> AppResult<&'static str> {
+    if layer != "annual" {
+        return Ok("");
+    }
+    Ok(crate::neis::day_kind_for(title, "", &crate::settings::load(conn)?.day_rules))
+}
+
 pub fn create_event(conn: &Connection, input: &EventInput, now: NaiveDateTime, default_remind: &ReminderSpec) -> AppResult<i64> {
     let (title, start, end, time) = check_event(input)?;
     // 학사력·계획표는 기본 알림을 끈다 (필요한 항목만 교사가 켠다)
@@ -320,9 +340,23 @@ pub fn create_event(conn: &Connection, input: &EventInput, now: NaiveDateTime, d
     let (en, offs, rt, custom) = norm_spec(&spec)?;
     let now_s = util::fmt_dt(now);
     conn.execute(
-        "INSERT INTO events(layer, title, start_date, end_date, time, date_expr, memo, source, remind_enabled, remind_offsets, remind_time, remind_custom_at, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'manual', ?8, ?9, ?10, ?11, ?12, ?12)",
-        params![input.layer, title, start, end, time, input.date_expr, input.memo.clone().unwrap_or_default(), en, offs, rt, custom, now_s],
+        "INSERT INTO events(layer, title, start_date, end_date, time, date_expr, memo, source, remind_enabled, remind_offsets, remind_time, remind_custom_at, created_at, updated_at, day_kind)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'manual', ?8, ?9, ?10, ?11, ?12, ?12, ?13)",
+        params![
+            input.layer,
+            title,
+            start,
+            end,
+            time,
+            input.date_expr,
+            input.memo.clone().unwrap_or_default(),
+            en,
+            offs,
+            rt,
+            custom,
+            now_s,
+            day_kind_of(conn, &input.layer, &title)?
+        ],
     )?;
     let id = conn.last_insert_rowid();
     reminders::rebuild(conn, TargetKind::Event, id, now)?;
@@ -334,11 +368,18 @@ pub fn update_event(conn: &Connection, id: i64, input: &EventInput, now: NaiveDa
     let (title, start, end, time) = check_event(input)?;
     let spec = input.remind.clone().unwrap_or(cur.remind);
     let (en, offs, rt, custom) = norm_spec(&spec)?;
+    // 나이스 학사력을 고치면 교사의 학사력이 된다 (같은 일정 표시 ext_key 는 남겨 다시 받아도 겹치지 않게)
+    let kind = if input.layer == "annual" && cur.ext_source == "neis" && cur.title == title {
+        cur.day_kind.clone()
+    } else {
+        day_kind_of(conn, &input.layer, &title)?.to_string()
+    };
     conn.execute(
         "UPDATE events SET layer=?2, title=?3, start_date=?4, end_date=?5, time=?6, date_expr=?7, memo=?8,
             remind_enabled=?9, remind_offsets=?10, remind_time=?11, remind_custom_at=?12,
-            edited=CASE WHEN source='ai' THEN 1 ELSE edited END, updated_at=?13 WHERE id=?1",
-        params![id, input.layer, title, start, end, time, input.date_expr, input.memo.clone().unwrap_or_default(), en, offs, rt, custom, util::fmt_dt(now)],
+            edited=CASE WHEN source='ai' THEN 1 ELSE edited END, updated_at=?13, day_kind=?14,
+            ext_source=CASE WHEN ext_source='neis' THEN '' ELSE ext_source END WHERE id=?1",
+        params![id, input.layer, title, start, end, time, input.date_expr, input.memo.clone().unwrap_or_default(), en, offs, rt, custom, util::fmt_dt(now), kind],
     )?;
     reminders::rebuild(conn, TargetKind::Event, id, now)?;
     Ok(())
@@ -346,7 +387,14 @@ pub fn update_event(conn: &Connection, id: i64, input: &EventInput, now: NaiveDa
 
 pub fn delete_event(conn: &Connection, id: i64) -> AppResult<()> {
     reminders::delete_for(conn, TargetKind::Event, id)?;
-    conn.execute("DELETE FROM events WHERE id=?1", params![id])?;
+    // 나이스에서 받은 학사력은 지운 것으로 표시만 한다 (다시 받아도 되살아나지 않게)
+    let n = conn.execute(
+        "UPDATE events SET ext_source='removed', hidden=1, day_kind='', remind_enabled=0 WHERE id=?1 AND ext_source='neis'",
+        params![id],
+    )?;
+    if n == 0 {
+        conn.execute("DELETE FROM events WHERE id=?1", params![id])?;
+    }
     Ok(())
 }
 
@@ -493,6 +541,12 @@ pub struct AgendaItem {
     pub note_id: Option<i64>,
     pub duty_label: Option<String>,
     pub layer: Option<String>,
+    /// 일정 메모 (장소·방문자 같은 설명)
+    pub memo: String,
+    /// 학사력 종류 (holiday | closure | vacation | work | 빈 값)
+    pub day_kind: String,
+    /// 휴일·휴업일·방학이면 설정에서 고른 색 이름 (그 밖의 일정은 층 색으로 보인다)
+    pub day_color: Option<String>,
 }
 
 fn agenda_from_task(t: TaskDto) -> AgendaItem {
@@ -513,6 +567,9 @@ fn agenda_from_task(t: TaskDto) -> AgendaItem {
         note_id: t.note_id,
         duty_label: t.duty_label,
         layer: None,
+        memo: String::new(),
+        day_kind: String::new(),
+        day_color: None,
     }
 }
 
@@ -534,10 +591,19 @@ fn agenda_from_duty(d: DutyLogDto) -> AgendaItem {
         note_id: d.note_id,
         duty_label: d.duty_label,
         layer: None,
+        memo: String::new(),
+        day_kind: String::new(),
+        day_color: None,
     }
 }
 
-fn agenda_from_event(e: EventDto) -> AgendaItem {
+fn agenda_from_event(e: EventDto, colors: &crate::settings::DayColors) -> AgendaItem {
+    let day_color = match e.day_kind.as_str() {
+        "holiday" => Some(colors.holiday.clone()),
+        "closure" => Some(colors.closure.clone()),
+        "vacation" => Some(colors.vacation.clone()),
+        _ => None,
+    };
     AgendaItem {
         kind: "event".into(),
         id: e.id,
@@ -555,6 +621,9 @@ fn agenda_from_event(e: EventDto) -> AgendaItem {
         note_id: e.note_id,
         duty_label: None,
         layer: Some(e.layer),
+        memo: e.memo,
+        day_kind: e.day_kind,
+        day_color,
     }
 }
 
@@ -570,6 +639,8 @@ pub struct TodayOverview {
     pub unclassified_count: i64,
     pub notes_today: i64,
     pub reminder_log: Vec<reminders::ReminderLog>,
+    /// 오늘 생일인 학생 (설정에서 켰을 때)
+    pub birthdays_today: Vec<String>,
 }
 
 pub const UPCOMING_DAYS: i64 = 14;
@@ -585,7 +656,7 @@ fn sort_agenda(v: &mut [AgendaItem]) {
 }
 
 /// 오늘 화면: 기한 지난 할 일 → 오늘 할 일 → 앞으로 2주
-pub fn today_overview(conn: &Connection, today: NaiveDate, now: NaiveDateTime) -> AppResult<TodayOverview> {
+pub fn today_overview(conn: &Connection, today: NaiveDate, now: NaiveDateTime, include_birthdays: bool) -> AppResult<TodayOverview> {
     let t = util::fmt_d(today);
     let until = util::fmt_d(today + Duration::days(UPCOMING_DAYS));
     let mut open: Vec<AgendaItem> = query_tasks(conn, "done=0 AND due_date IS NOT NULL AND due_date <= ?1", &[&until])?
@@ -612,20 +683,40 @@ pub fn today_overview(conn: &Connection, today: NaiveDate, now: NaiveDateTime) -
         .into_iter()
         .map(agenda_from_task)
         .collect();
-    let mut events_today: Vec<AgendaItem> =
-        query_events(conn, "start_date <= ?1 AND end_date >= ?1", &[&t])?.into_iter().map(agenda_from_event).collect();
+    let colors = crate::settings::load(conn)?.day_colors;
+    let mut events_today: Vec<AgendaItem> = query_events(conn, "start_date <= ?1 AND end_date >= ?1 AND hidden=0", &[&t])?
+        .into_iter()
+        .map(|e| agenda_from_event(e, &colors))
+        .collect();
     sort_agenda(&mut events_today);
     let tomorrow = util::fmt_d(today + Duration::days(1));
-    let mut events_upcoming: Vec<AgendaItem> = query_events(conn, "start_date >= ?1 AND start_date <= ?2", &[&tomorrow, &until])?
+    let mut events_upcoming: Vec<AgendaItem> = query_events(conn, "start_date >= ?1 AND start_date <= ?2 AND hidden=0", &[&tomorrow, &until])?
         .into_iter()
-        .map(agenda_from_event)
+        .map(|e| agenda_from_event(e, &colors))
         .collect();
     sort_agenda(&mut events_upcoming);
     let unclassified_count: i64 =
         conn.query_row("SELECT COUNT(*) FROM notes WHERE status IN ('pending','processing','failed')", [], |r| r.get(0))?;
     let notes_today: i64 = conn.query_row("SELECT COUNT(*) FROM notes WHERE substr(created_at,1,10)=?1", params![t], |r| r.get(0))?;
     let reminder_log = reminders::recent(conn, now - Duration::days(2))?;
-    Ok(TodayOverview { today: t, overdue, due_today, upcoming, undated, events_today, events_upcoming, unclassified_count, notes_today, reminder_log })
+    let birthdays_today = if include_birthdays {
+        crate::students::birthdays_in_range(conn, today, today)?.into_iter().map(|b| b.label).collect()
+    } else {
+        vec![]
+    };
+    Ok(TodayOverview {
+        today: t,
+        overdue,
+        due_today,
+        upcoming,
+        undated,
+        events_today,
+        events_upcoming,
+        unclassified_count,
+        notes_today,
+        reminder_log,
+        birthdays_today,
+    })
 }
 
 // ───────────────────────── 일정표 ─────────────────────────
@@ -645,26 +736,55 @@ pub struct CalendarItem {
     pub source: String,
     pub note_id: Option<i64>,
     pub memo: String,
+    /// 학사력 종류 (holiday | closure | vacation | work)
+    pub day_kind: String,
+    /// 학년 태그
+    pub grades: String,
+    /// 목록에 보이지 않고 날짜 색만 칠함 (토요휴업일)
+    pub hidden: bool,
 }
 
 /// 반영 방향 규칙: 연간 학사력 → 연·월·주 / 월간 계획 → 월·주 / 주간 계획 → 주 / 기록·할 일·업무 → 월·주
 pub fn layer_visible(layer: &str, view: &str) -> bool {
     match layer {
-        "annual" => matches!(view, "year" | "month" | "week"),
-        "monthly" | "note" | "task" | "duty" => matches!(view, "month" | "week"),
+        // 학생 생일은 학사력처럼 모든 보기에 나온다 (설정에서 켰을 때만)
+        "annual" | "birthday" => matches!(view, "year" | "month" | "week"),
+        "monthly" | "note" | "task" | "duty" | "tt_change" => matches!(view, "month" | "week"),
         "weekly" => view == "week",
         _ => false,
     }
 }
 
-pub fn calendar(conn: &Connection, view: &str, start: &str, end: &str) -> AppResult<Vec<CalendarItem>> {
+pub fn calendar(conn: &Connection, view: &str, start: &str, end: &str, include_birthdays: bool) -> AppResult<Vec<CalendarItem>> {
     if !matches!(view, "year" | "month" | "week") {
         return Err(AppError::invalid("일정표 보기 종류가 올바르지 않습니다."));
     }
     let start = util::opt_date(Some(start))?.ok_or_else(|| AppError::invalid("시작 날짜가 필요합니다."))?;
     let end = util::opt_date(Some(end))?.ok_or_else(|| AppError::invalid("끝 날짜가 필요합니다."))?;
     let mut out: Vec<CalendarItem> = Vec::new();
-    for e in query_events(conn, "start_date <= ?2 AND end_date >= ?1 ORDER BY start_date, time IS NULL, time, id", &[&start, &end])? {
+    if include_birthdays && layer_visible("birthday", view) {
+        if let (Some(s), Some(e)) = (util::parse_d(&start), util::parse_d(&end)) {
+            for b in crate::students::birthdays_in_range(conn, s, e)? {
+                out.push(CalendarItem {
+                    kind: "birthday".into(),
+                    id: b.student_id,
+                    layer: "birthday".into(),
+                    title: format!("{} 생일", b.label),
+                    start_date: b.date.clone(),
+                    end_date: b.date,
+                    time: None,
+                    done: false,
+                    source: "manual".into(),
+                    note_id: None,
+                    memo: String::new(),
+                    day_kind: String::new(),
+                    grades: String::new(),
+                    hidden: false,
+                });
+            }
+        }
+    }
+    for e in query_events(conn, "start_date <= ?2 AND end_date >= ?1 AND ext_source<>'removed' ORDER BY start_date, time IS NULL, time, id", &[&start, &end])? {
         if !layer_visible(&e.layer, view) {
             continue;
         }
@@ -680,6 +800,9 @@ pub fn calendar(conn: &Connection, view: &str, start: &str, end: &str) -> AppRes
             source: e.source,
             note_id: e.note_id,
             memo: e.memo,
+            day_kind: e.day_kind,
+            grades: e.grades,
+            hidden: e.hidden,
         });
     }
     if layer_visible("task", view) {
@@ -697,6 +820,9 @@ pub fn calendar(conn: &Connection, view: &str, start: &str, end: &str) -> AppRes
                 source: t.source,
                 note_id: t.note_id,
                 memo: String::new(),
+                day_kind: String::new(),
+                grades: String::new(),
+                hidden: false,
             });
         }
     }
@@ -715,6 +841,35 @@ pub fn calendar(conn: &Connection, view: &str, start: &str, end: &str) -> AppRes
                 source: l.source,
                 note_id: l.note_id,
                 memo: String::new(),
+                day_kind: String::new(),
+                grades: String::new(),
+                hidden: false,
+            });
+        }
+    }
+    // 기록에서 찾은 하루짜리 시간표 변경 (보강·교체·자습·휴강 …)
+    if layer_visible("tt_change", view) {
+        for e in crate::ttinput::changes_between(conn, &start, &end)? {
+            let d = e.date.clone().unwrap_or_default();
+            out.push(CalendarItem {
+                kind: "tt_change".into(),
+                id: e.id,
+                layer: "tt_change".into(),
+                title: [crate::ttinput::period_label(e.period), e.class_label, e.subject, e.change_type]
+                    .into_iter()
+                    .filter(|s| !s.is_empty())
+                    .collect::<Vec<_>>()
+                    .join(" "),
+                start_date: d.clone(),
+                end_date: d,
+                time: e.time,
+                done: false,
+                source: "ai".into(),
+                note_id: Some(e.note_id),
+                memo: e.text,
+                day_kind: String::new(),
+                grades: String::new(),
+                hidden: false,
             });
         }
     }
@@ -747,11 +902,31 @@ mod tests {
         create_event(&c, &ev("monthly", "교과협의회", "2026-10-06"), now(), &spec()).unwrap();
         create_event(&c, &ev("weekly", "3교시 공개수업", "2026-10-07"), now(), &spec()).unwrap();
         let titles = |view: &str| -> Vec<String> {
-            calendar(&c, view, "2026-10-01", "2026-10-31").unwrap().into_iter().map(|i| i.title).collect()
+            calendar(&c, view, "2026-10-01", "2026-10-31", false).unwrap().into_iter().map(|i| i.title).collect()
         };
         assert_eq!(titles("year"), vec!["개학"]);
         assert_eq!(titles("month"), vec!["개학", "교과협의회"]);
         assert_eq!(titles("week"), vec!["개학", "교과협의회", "3교시 공개수업"]);
+    }
+
+    #[test]
+    fn birthdays_follow_setting_and_show_in_all_views() {
+        let db = Db::open_in_memory().unwrap();
+        let c = db.lock();
+        let id = crate::students::create_student(
+            &c,
+            &crate::students::StudentInput { name: "홍길동".into(), class_label: Some("2-1".into()), number: Some(3), memo: None },
+            now(),
+        )
+        .unwrap();
+        crate::students::set_roster_field(&c, id, "birthday", "10월 3일", now()).unwrap();
+        let has = |view: &str, s: &str, e: &str, on: bool| calendar(&c, view, s, e, on).unwrap().iter().any(|i| i.kind == "birthday" && i.title == "2-1 홍길동 생일");
+        assert!(!has("month", "2026-09-28", "2026-11-08", false), "끄면 보이지 않는다");
+        assert!(has("year", "2026-01-01", "2026-12-31", true));
+        assert!(has("month", "2026-09-28", "2026-11-08", true));
+        assert!(has("week", "2026-09-28", "2026-10-04", true));
+        let o = today_overview(&c, util::parse_d("2026-10-03").unwrap(), now(), true).unwrap();
+        assert_eq!(o.birthdays_today, vec!["2-1 홍길동".to_string()]);
     }
 
     #[test]
@@ -760,11 +935,11 @@ mod tests {
         let c = db.lock();
         let input = TaskInput { title: "보호자 연락".into(), due_date: Some("2026-10-02".into()), due_time: None, date_expr: Some("금요일까지".into()), duty_id: None, done: None, remind: None };
         create_task(&c, &input, now(), &spec()).unwrap();
-        let week = calendar(&c, "week", "2026-09-28", "2026-10-04").unwrap();
+        let week = calendar(&c, "week", "2026-09-28", "2026-10-04", false).unwrap();
         assert!(week.iter().any(|i| i.kind == "task" && i.title == "보호자 연락" && i.start_date == "2026-10-02"));
-        let month = calendar(&c, "month", "2026-09-28", "2026-11-08").unwrap();
+        let month = calendar(&c, "month", "2026-09-28", "2026-11-08", false).unwrap();
         assert!(month.iter().any(|i| i.kind == "task"));
-        let year = calendar(&c, "year", "2026-01-01", "2026-12-31").unwrap();
+        let year = calendar(&c, "year", "2026-01-01", "2026-12-31", false).unwrap();
         assert!(year.iter().all(|i| i.kind != "task"));
     }
 
@@ -777,7 +952,7 @@ mod tests {
         create_task(&c, &mk("오늘 일", "2026-09-29"), now(), &spec()).unwrap();
         let later = create_task(&c, &mk("다음 주 일", "2026-10-09"), now(), &spec()).unwrap();
         create_task(&c, &mk("먼 일", "2026-11-30"), now(), &spec()).unwrap();
-        let o = today_overview(&c, today(), now()).unwrap();
+        let o = today_overview(&c, today(), now(), false).unwrap();
         assert_eq!(o.overdue.iter().map(|i| i.title.as_str()).collect::<Vec<_>>(), vec!["지난 일"]);
         assert_eq!(o.due_today.iter().map(|i| i.title.as_str()).collect::<Vec<_>>(), vec!["오늘 일"]);
         assert_eq!(o.upcoming.iter().map(|i| i.title.as_str()).collect::<Vec<_>>(), vec!["다음 주 일"]);
@@ -786,7 +961,7 @@ mod tests {
         assert_eq!(t.next_reminder.as_deref(), Some("2026-10-08T08:30:00"));
         set_task_done(&c, later, true, now()).unwrap();
         assert!(get_task(&c, later).unwrap().next_reminder.is_none());
-        let o = today_overview(&c, today(), now()).unwrap();
+        let o = today_overview(&c, today(), now(), false).unwrap();
         assert!(o.upcoming.is_empty());
     }
 

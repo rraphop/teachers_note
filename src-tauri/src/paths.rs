@@ -22,6 +22,7 @@ pub struct AppPaths {
     pub webview_dir: PathBuf,
     pub settings_json: PathBuf,
     pub wipe_marker: PathBuf,
+    pub restore_marker: PathBuf,
 }
 
 impl AppPaths {
@@ -36,6 +37,7 @@ impl AppPaths {
             webview_dir: root.join("webview"),
             settings_json: root.join("settings.json"),
             wipe_marker: root.join("WIPE_REQUESTED"),
+            restore_marker: root.join("RESTORE_REQUESTED"),
             root,
         }
     }
@@ -70,6 +72,19 @@ impl AppPaths {
             self.webview_dir.clone(),
             self.settings_json.clone(),
         ]
+    }
+}
+
+/// 파일 하나 실행기(바탕화면의 TeacherNotebook.exe)로 켰으면 그 파일 위치
+pub fn launcher_path() -> Option<PathBuf> {
+    std::env::var_os("TN_LAUNCHER").filter(|v| !v.is_empty()).map(PathBuf::from).filter(|p| p.is_file())
+}
+
+/// 자동 시작 등에 등록할 실행 파일: 실행기로 켰으면 실행기(업데이트로 덮어써도 끊기지 않게), 아니면 이 프로그램
+pub fn launch_target() -> std::io::Result<PathBuf> {
+    match launcher_path() {
+        Some(p) => Ok(p),
+        None => std::env::current_exe(),
     }
 }
 
@@ -125,6 +140,8 @@ pub fn perform_wipe(paths: &AppPaths) -> AppResult<Vec<String>> {
             Err(e) => return Err(AppError::msg(format!("{} 을(를) 지우지 못했습니다: {e}", t.display()))),
         }
     }
+    // 지운 백업으로 되돌리려는 예약도 함께 없앤다
+    let _ = std::fs::remove_file(&paths.restore_marker);
     std::fs::remove_file(&paths.wipe_marker)?;
     Ok(removed)
 }

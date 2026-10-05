@@ -144,11 +144,11 @@ mod tests {
         let db = Db::open_in_memory().unwrap();
         let c = db.lock();
         let now = util::parse_dt("2026-09-29T09:00:00").unwrap();
-        notes::create_note(&c, "오늘 3교시 2-1 김민수 지각. 금요일까지 보호자 연락.", now).unwrap();
+        notes::create_note(&c, "오늘 3교시 2-1 홍길동 지각. 금요일까지 보호자 연락.", now).unwrap();
         notes::create_note(&c, "10월 15일 교육장 공감소통 방문", now).unwrap();
-        let r = search(&c, &SearchQuery { text: "김민수".into(), ..Default::default() }).unwrap();
+        let r = search(&c, &SearchQuery { text: "홍길동".into(), ..Default::default() }).unwrap();
         assert_eq!(r.notes.len(), 1);
-        assert!(r.notes[0].snippet.contains("김민수"));
+        assert!(r.notes[0].snippet.contains("홍길동"));
         let r = search(&c, &SearchQuery { text: "지각".into(), ..Default::default() }).unwrap();
         assert_eq!(r.notes.len(), 1);
         let r = search(&c, &SearchQuery { text: "공감소통 방문".into(), ..Default::default() }).unwrap();
@@ -159,14 +159,14 @@ mod tests {
         let r = search(&c, &SearchQuery { text: "없는말".into(), ..Default::default() }).unwrap();
         assert!(r.notes.is_empty());
         // 특수문자가 있어도 오류가 나지 않는다
-        let r = search(&c, &SearchQuery { text: "\"김민수 OR *".into(), ..Default::default() }).unwrap();
+        let r = search(&c, &SearchQuery { text: "\"홍길동 OR *".into(), ..Default::default() }).unwrap();
         assert!(r.notes.is_empty());
     }
 
     #[test]
     fn snippet_window() {
-        let s = snippet("가나다라마바사아자차카타파하 김민수 지각", &["김민수".into()], 3);
-        assert!(s.contains("김민수"));
+        let s = snippet("가나다라마바사아자차카타파하 홍길동 지각", &["홍길동".into()], 3);
+        assert!(s.contains("홍길동"));
         assert!(s.starts_with('…'));
     }
 }

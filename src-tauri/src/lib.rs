@@ -1,5 +1,8 @@
 pub mod analysis;
 pub mod app;
+pub mod archive;
+pub mod backup;
+pub mod briefing;
 pub mod classify;
 pub mod commands;
 pub mod dates;
@@ -7,12 +10,17 @@ pub mod db;
 pub mod device;
 pub mod duties;
 pub mod error;
+pub mod export;
 pub mod llm;
 pub mod logging;
+pub mod memos;
 pub mod models;
+pub mod neis;
+pub mod neis_roster;
 pub mod notes;
 pub mod notify;
 pub mod paths;
+pub mod pdf;
 pub mod records;
 pub mod reminders;
 pub mod runtime;
@@ -21,7 +29,11 @@ pub mod search;
 pub mod settings;
 pub mod students;
 pub mod text;
+pub mod timetable;
+pub mod today_layout;
+pub mod ttinput;
 pub mod util;
+pub mod window_fx;
 
 use app::AppState;
 use serde_json::json;
@@ -101,7 +113,11 @@ pub fn run() {
     }
     logging::init(paths.logs_dir.clone());
     logging::info(&format!("시작: 버전 {}", env!("CARGO_PKG_VERSION")));
-    let db = match db::Db::open(&paths.db_path) {
+    // 백업 되돌리기 예약이 있으면 DB 를 열기 전에 바꿔 넣는다 (실패하면 지금 데이터 그대로)
+    if let Some(outcome) = backup::perform_restore(&paths) {
+        *backup::LAST_RESTORE.lock().unwrap_or_else(|e| e.into_inner()) = Some(outcome);
+    }
+    let db = match db::Db::open_with_upgrade_backup(&paths.db_path, &paths.backups_dir) {
         Ok(d) => Arc::new(d),
         Err(e) => fatal(&format!("{e}\n\n데이터 위치: {}", paths.db_path.display())),
     };
@@ -111,10 +127,18 @@ pub fn run() {
     let state_slot: Arc<std::sync::Mutex<Option<Arc<AppState>>>> = Arc::new(std::sync::Mutex::new(None));
     let state_slot_setup = state_slot.clone();
 
-    let builder = tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+    // 한 번만 실행: 두 번째로 실행하면 이미 열린 창을 앞으로 가져온다.
+    // 자동 시험(TN_DATA_ROOT 로 따로 만든 데이터 폴더)에서는 교사가 쓰고 있는 창을 건드리지 않도록 끈다.
+    let test_data_root = std::env::var_os("TN_DATA_ROOT").is_some_and(|v| !v.is_empty());
+    let builder = tauri::Builder::default();
+    let builder = if test_data_root {
+        builder
+    } else {
+        builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             show_main(app);
         }))
+    };
+    let builder = builder
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_clipboard_manager::init())
@@ -158,6 +182,25 @@ pub fn run() {
             if let Err(e) = notify::register(Some(&icon)) {
                 logging::warn(&format!("알림 등록 실패: {e}"));
             }
+            // 나이스: 학교를 정했으면 하루 한 번 시간표·학사일정을 새로 받고 이번 주 급식을 받아 둔다 (학교 코드만 보낸다)
+            if self_test_out.is_none() {
+                let st = state.clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(Duration::from_secs(3));
+                    if crate::neis::auto_sync(&st.db, crate::util::now(), &crate::neis::http_get) {
+                        st.changed("all");
+                    }
+                });
+            }
+            // 자동 시작을 켜 두었으면, 파일 하나 버전으로 켤 때마다 지금 켠 파일("교무수첩(0.61).exe")을 가리키게 한다
+            // (새 버전 파일로 바꾸거나 지난 버전 파일을 지워도 자동 시작이 끊기지 않게).
+            // 예전 모양(`--background`: 알림 영역에만 켜기)이면 창을 띄우는 모양으로 고쳐 쓴다.
+            if let Some(cur) = notify::autostart_target() {
+                let exe = paths::launcher_path().unwrap_or_else(|| std::path::PathBuf::from(notify::autostart_exe(&cur)));
+                if notify::autostart_command(&exe).to_lowercase() != cur.trim().to_lowercase() {
+                    let _ = notify::set_autostart(true, &exe);
+                }
+            }
 
             app::spawn_worker(state.clone(), rx);
             app::spawn_ticker(state.clone());
@@ -166,15 +209,27 @@ pub fn run() {
             }
 
             let visible = !background && self_test_out.is_none();
+            let (on_top, transparency) = state.db.with(|c| settings::load(c)).map(|s| (s.always_on_top, s.window_transparency)).unwrap_or((false, 0));
             let win = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
                 .title("로컬 AI 교무수첩")
                 .inner_size(1280.0, 820.0)
                 .min_inner_size(960.0, 620.0)
                 .center()
+                .always_on_top(on_top)
                 .visible(visible)
                 .data_directory(state.paths.webview_dir.clone())
                 .build()?;
-            let _ = win;
+            // 지난번에 정한 창 투명도 (여기는 창을 만든 메인 스레드)
+            #[cfg(windows)]
+            if transparency > 0 {
+                if let Ok(h) = win.hwnd() {
+                    if let Err(e) = window_fx::apply(h.0 as isize, transparency) {
+                        logging::warn(&e);
+                    }
+                }
+            }
+            #[cfg(not(windows))]
+            let _ = (win, transparency);
 
             // 알림 영역(트레이) 아이콘: 창을 닫아도 알림을 받으려면 여기서 다시 열 수 있다
             let open = MenuItem::with_id(app, "open", "교무수첩 열기", true, None::<&str>)?;
@@ -236,6 +291,13 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
+            // 최대화·최소화·포커스 등으로 창 틀이 스타일을 다시 쓰면 투명도가 풀린다 → 되살린다
+            #[cfg(windows)]
+            if matches!(event, WindowEvent::Resized(_) | WindowEvent::Focused(_) | WindowEvent::ScaleFactorChanged { .. }) && window_fx::current() > 0 {
+                if let Ok(h) = window.hwnd() {
+                    window_fx::ensure(h.0 as isize);
+                }
+            }
             if let WindowEvent::CloseRequested { api, .. } = event {
                 let app = window.app_handle();
                 let to_tray = app
@@ -270,16 +332,28 @@ pub fn run() {
             commands::delete_student,
             commands::merge_students,
             commands::import_roster,
-            commands::record_overview,
+            commands::import_neis_roster,
+            commands::license_texts,
+            commands::set_note_track,
+            commands::neis_search_schools,
+            commands::neis_status,
+            commands::neis_sync,
+            commands::get_meals,
+            commands::timetable_colors,
+            commands::set_timetable_color,
+            commands::today_briefing,
+            commands::refresh_briefing,
+            commands::student_record,
+            commands::record_status,
+            commands::record_gather,
+            commands::record_ai_draft,
+            commands::save_record_text,
+            commands::check_record_text,
+            commands::export_record_finals,
             commands::unassigned_observations,
             commands::create_observation,
             commands::update_observation,
             commands::delete_observation,
-            commands::create_draft_template,
-            commands::generate_draft_ai,
-            commands::update_draft,
-            commands::delete_draft,
-            commands::check_draft_text,
             commands::list_duties,
             commands::create_duty,
             commands::update_duty,
@@ -302,6 +376,18 @@ pub fn run() {
             commands::update_event,
             commands::delete_event,
             commands::today_overview,
+            commands::set_student_field,
+            commands::current_semester,
+            commands::get_bell,
+            commands::compute_bell,
+            commands::save_bell,
+            commands::get_timetable,
+            commands::class_timetables,
+            commands::set_timetable_cell,
+            commands::add_school_row,
+            commands::delete_timetable,
+            commands::copy_semester,
+            commands::today_timetable,
             commands::search,
             commands::model_catalog,
             commands::start_download,
@@ -320,10 +406,31 @@ pub fn run() {
             commands::get_settings,
             commands::update_settings,
             commands::set_autostart,
+            commands::set_always_on_top,
+            commands::set_window_transparency,
+            commands::list_memos,
+            commands::create_memo,
+            commands::update_memo,
+            commands::delete_memo,
+            commands::restore_memo,
+            commands::shift_memo,
+            commands::get_today_layout,
+            commands::set_today_layout,
             commands::test_notification,
             commands::open_folder,
             commands::list_backups,
             commands::backup_now,
+            commands::inspect_backup,
+            commands::request_restore,
+            commands::take_restore_outcome,
+            commands::export_data,
+            commands::reveal_export,
+            commands::tt_conflicts,
+            commands::resolve_tt_conflict,
+            commands::school_years,
+            commands::make_year_archive,
+            commands::new_year_preview,
+            commands::start_new_year,
             commands::request_wipe,
             commands::cancel_wipe,
             commands::restart_app,
@@ -342,7 +449,8 @@ pub fn run() {
                 let _ = st.queue.lock().unwrap_or_else(|e| e.into_inner()).send(app::Job::Shutdown);
                 st.downloader.pause_all();
                 st.runtime.stop();
-                logging::info("종료: AI 엔진 정리 완료");
+                st.db.close();
+                logging::info("종료: AI 엔진 정리·DB 닫기 완료");
             }
         }
     });

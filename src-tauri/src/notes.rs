@@ -18,12 +18,14 @@ pub const MAX_NOTE_CHARS: usize = 20_000;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Chip {
-    /// student | task | event | duty
+    /// student | task | event | duty | timetable | tt_conflict | tt_change
     pub kind: String,
     pub label: String,
     pub area: Option<String>,
     pub date: Option<String>,
     pub done: bool,
+    /// 시간표 반영 기록 id (tt_conflict 의 바꾸기/그대로 두기에 쓴다)
+    pub ref_id: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -42,10 +44,24 @@ pub struct NoteDto {
     pub guard_notes: Vec<String>,
     pub unknown_names: Vec<String>,
     pub chips: Vec<Chip>,
+    /// 교사가 직접 옮긴 갈래 ('general' | 'work'). 없으면 AI 분류를 따른다.
+    pub track: Option<String>,
+    /// 정리된 업무기록인가 (직접 옮겼거나, 할 일·일정·업무·학생 관찰·시간표가 나온 기록)
+    pub is_work: bool,
 }
 
-const NOTE_COLS: &str = "id, raw_text, created_at, updated_at, raw_edited_at, status, status_reason, summary, summary_source,
-    classified_at, classified_by, guard_notes, unknown_names";
+/// 업무기록 판정: 직접 옮긴 갈래가 우선, 없으면 이 기록에서 나온 항목이 있는지
+const IS_WORK_SQL: &str = "(CASE WHEN notes.track='work' THEN 1 WHEN notes.track='general' THEN 0
+    WHEN EXISTS (SELECT 1 FROM tasks x WHERE x.note_id=notes.id) OR EXISTS (SELECT 1 FROM events x WHERE x.note_id=notes.id)
+      OR EXISTS (SELECT 1 FROM duty_logs x WHERE x.note_id=notes.id) OR EXISTS (SELECT 1 FROM observations x WHERE x.note_id=notes.id)
+      OR EXISTS (SELECT 1 FROM tt_entries x WHERE x.note_id=notes.id) THEN 1 ELSE 0 END)";
+
+fn note_cols() -> String {
+    format!(
+        "id, raw_text, created_at, updated_at, raw_edited_at, status, status_reason, summary, summary_source,
+    classified_at, classified_by, guard_notes, unknown_names, track, {IS_WORK_SQL}"
+    )
+}
 
 fn map_note(r: &rusqlite::Row) -> rusqlite::Result<NoteDto> {
     let guard: String = r.get(11)?;
@@ -65,6 +81,8 @@ fn map_note(r: &rusqlite::Row) -> rusqlite::Result<NoteDto> {
         guard_notes: serde_json::from_str(&guard).unwrap_or_default(),
         unknown_names: serde_json::from_str(&unknown).unwrap_or_default(),
         chips: vec![],
+        track: r.get(13)?,
+        is_work: r.get::<_, i64>(14)? != 0,
     })
 }
 
@@ -82,31 +100,59 @@ fn chips(conn: &Connection, note_id: i64) -> AppResult<Vec<Chip>> {
             (None, Some(n)) => n,
             _ => "학생 미지정".to_string(),
         };
-        out.push(Chip { kind: "student".into(), label: who, area: Some(area), date: None, done: false });
+        out.push(Chip { kind: "student".into(), label: who, area: Some(area), date: None, done: false, ref_id: None });
     }
     let mut st = conn.prepare("SELECT title, due_date, done FROM tasks WHERE note_id=?1 ORDER BY id")?;
     for row in st.query_map(params![note_id], |r| Ok((r.get::<_, String>(0)?, r.get::<_, Option<String>>(1)?, r.get::<_, i64>(2)?)))? {
         let (t, d, done) = row?;
-        out.push(Chip { kind: "task".into(), label: t, area: None, date: d, done: done != 0 });
+        out.push(Chip { kind: "task".into(), label: t, area: None, date: d, done: done != 0, ref_id: None });
     }
     let mut st = conn.prepare("SELECT title, start_date FROM events WHERE note_id=?1 ORDER BY id")?;
     for row in st.query_map(params![note_id], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))? {
         let (t, d) = row?;
-        out.push(Chip { kind: "event".into(), label: t, area: None, date: Some(d), done: false });
+        out.push(Chip { kind: "event".into(), label: t, area: None, date: Some(d), done: false, ref_id: None });
     }
     let mut st = conn.prepare(
         "SELECT d.name, l.date, l.done FROM duty_logs l LEFT JOIN duties d ON d.id=l.duty_id WHERE l.note_id=?1 ORDER BY l.id",
     )?;
     for row in st.query_map(params![note_id], |r| Ok((r.get::<_, Option<String>>(0)?, r.get::<_, Option<String>>(1)?, r.get::<_, i64>(2)?)))? {
         let (n, d, done) = row?;
-        out.push(Chip { kind: "duty".into(), label: n.unwrap_or_else(|| "업무".into()), area: None, date: d, done: done != 0 });
+        out.push(Chip { kind: "duty".into(), label: n.unwrap_or_else(|| "업무".into()), area: None, date: d, done: done != 0, ref_id: None });
+    }
+    // 시간표에 반영한 문장
+    for e in crate::ttinput::for_note(conn, note_id)? {
+        let kind = match (e.kind.as_str(), e.status.as_str()) {
+            ("change", _) => "tt_change",
+            (_, "conflict") => "tt_conflict",
+            _ => "timetable",
+        };
+        let label = match e.status.as_str() {
+            "conflict" => format!("{} — 지금 칸: {}", e.label, e.previous),
+            "kept" => format!("{} → 원래 수업 그대로", e.label),
+            _ => e.label.clone(),
+        };
+        out.push(Chip { kind: kind.into(), label, area: None, date: e.date.clone(), done: false, ref_id: Some(e.id) });
     }
     Ok(out)
 }
 
+/// 기록 전체가 시간표 문장이라 규칙으로 정리를 끝낸 경우 (AI 분류가 필요 없다)
+pub fn mark_rule_classified(conn: &Connection, id: i64, now: NaiveDateTime) -> AppResult<()> {
+    let raw: String = conn.query_row("SELECT raw_text FROM notes WHERE id=?1", params![id], |r| r.get(0))?;
+    let first = crate::text::sentences(&raw).first().map(|s| crate::text::tidy(s.slice(&raw))).unwrap_or_default();
+    let first = crate::classify::strip_leading_when(&first, now.date());
+    let now_s = util::fmt_dt(now);
+    conn.execute(
+        "UPDATE notes SET status='classified', status_reason=NULL, summary=?2, summary_source='extract', classified_at=?3, classified_by='rule',
+            updated_at=?3 WHERE id=?1",
+        params![id, crate::text::truncate_chars(&first, 60), now_s],
+    )?;
+    Ok(())
+}
+
 pub fn get_note(conn: &Connection, id: i64) -> AppResult<NoteDto> {
     let mut n = conn
-        .query_row(&format!("SELECT {NOTE_COLS} FROM notes WHERE id=?1"), params![id], map_note)
+        .query_row(&format!("SELECT {} FROM notes WHERE id=?1", note_cols()), params![id], map_note)
         .optional()?
         .ok_or_else(|| AppError::not_found("기록을 찾을 수 없습니다."))?;
     n.chips = chips(conn, id)?;
@@ -114,7 +160,7 @@ pub fn get_note(conn: &Connection, id: i64) -> AppResult<NoteDto> {
 }
 
 pub fn query_notes(conn: &Connection, where_sql: &str, args: &[&dyn rusqlite::ToSql]) -> AppResult<Vec<NoteDto>> {
-    let mut st = conn.prepare(&format!("SELECT {NOTE_COLS} FROM notes WHERE {where_sql}"))?;
+    let mut st = conn.prepare(&format!("SELECT {} FROM notes WHERE {where_sql}", note_cols()))?;
     let mut rows = st.query_map(args, map_note)?.collect::<Result<Vec<_>, _>>()?;
     for n in rows.iter_mut() {
         n.chips = chips(conn, n.id)?;
@@ -144,6 +190,9 @@ pub struct NoteFilter {
     /// all | unclassified | classified
     #[serde(default)]
     pub status: Option<String>,
+    /// general (일반 기록) | work (정리된 업무기록) | 없음 (모두)
+    #[serde(default)]
+    pub track: Option<String>,
     #[serde(default)]
     pub date: Option<String>,
     #[serde(default)]
@@ -160,6 +209,11 @@ pub fn list_notes(conn: &Connection, f: &NoteFilter) -> AppResult<Vec<NoteDto>> 
     match f.status.as_deref() {
         Some("unclassified") => w.push("status IN ('pending','processing','failed')".into()),
         Some("classified") => w.push("status IN ('classified','manual')".into()),
+        _ => {}
+    }
+    match f.track.as_deref() {
+        Some("work") => w.push(format!("{IS_WORK_SQL}=1")),
+        Some("general") => w.push(format!("{IS_WORK_SQL}=0")),
         _ => {}
     }
     if let Some(d) = util::opt_date(f.date.as_deref())? {
@@ -205,6 +259,21 @@ pub fn update_raw(conn: &Connection, id: i64, raw: &str, now: NaiveDateTime) -> 
     Ok(())
 }
 
+/// 기록을 일반 기록 / 업무기록으로 직접 옮긴다 (None = AI 분류를 따름). AI가 다시 분류해도 바뀌지 않는다.
+pub fn set_track(conn: &Connection, id: i64, track: Option<&str>, now: NaiveDateTime) -> AppResult<()> {
+    let track = match track {
+        Some("general") => Some("general"),
+        Some("work") => Some("work"),
+        None => None,
+        Some(_) => return Err(AppError::invalid("알 수 없는 기록 갈래입니다.")),
+    };
+    let n = conn.execute("UPDATE notes SET track=?2, updated_at=?3 WHERE id=?1", params![id, track, util::fmt_dt(now)])?;
+    if n == 0 {
+        return Err(AppError::not_found("기록을 찾을 수 없습니다."));
+    }
+    Ok(())
+}
+
 pub fn delete_note(conn: &mut Connection, id: i64) -> AppResult<()> {
     let tx = conn.transaction()?;
     reminders::delete_for_note(&tx, id)?;
@@ -228,7 +297,7 @@ pub fn has_user_changes(conn: &Connection, id: i64) -> AppResult<bool> {
         "SELECT (SELECT COUNT(*) FROM tasks WHERE note_id=?1 AND (edited=1 OR done=1 OR source='manual'))
               + (SELECT COUNT(*) FROM events WHERE note_id=?1 AND (edited=1 OR source='manual'))
               + (SELECT COUNT(*) FROM duty_logs WHERE note_id=?1 AND (edited=1 OR done=1 OR source='manual'))
-              + (SELECT COUNT(*) FROM observations WHERE note_id=?1 AND (edited=1 OR source='manual'))
+              + (SELECT COUNT(*) FROM observations WHERE note_id=?1 AND (edited=1 OR source='manual' OR excluded=1))
               + (SELECT COUNT(*) FROM record_draft_sources ds JOIN observations o ON o.id=ds.observation_id WHERE o.note_id=?1)",
         params![id],
         |r| r.get(0),
@@ -262,6 +331,8 @@ pub fn apply_plan(conn: &mut Connection, note_id: i64, plan: &Plan, mode: ApplyM
     let now_s = util::fmt_dt(now);
     let mut unresolved: Vec<String> = plan.unknown_names.clone();
     let mut new_targets: Vec<(TargetKind, i64)> = Vec::new();
+    // 한 기록에서 같은 학생·같은 영역의 관찰은 하나로 (내용을 이어 붙인다)
+    let mut seen_obs: BTreeMap<(i64, String), i64> = BTreeMap::new();
 
     for item in &plan.items {
         let source = source_of(item.origin, &mode);
@@ -272,6 +343,13 @@ pub fn apply_plan(conn: &mut Connection, note_id: i64, plan: &Plan, mode: ApplyM
         }
         let date = util::opt_date(item.date.as_deref())?;
         let time = util::opt_time(item.time.as_deref())?;
+        // "5교시 소방 대피 훈련"처럼 시각 대신 교시를 적었으면 그날 일과 시간의 교시 시작 시각을 넣는다
+        let time = match (&time, &date, item.kind) {
+            (None, Some(d), ItemKind::Task | ItemKind::Event | ItemKind::Duty) => {
+                util::parse_d(d).and_then(|d| crate::ttinput::time_from_period_text(&tx, d, text))
+            }
+            _ => time,
+        };
         let spec = item.remind.clone().unwrap_or_else(|| ReminderSpec {
             enabled: date.is_some() && default_remind.enabled,
             ..default_remind.clone()
@@ -302,11 +380,23 @@ pub fn apply_plan(conn: &mut Connection, note_id: i64, plan: &Plan, mode: ApplyM
                 }
                 for sid in ids {
                     let sid_opt = if sid > 0 { Some(sid) } else { None };
+                    // 교과는 과목, 자유학기는 활동 (원문·내 과목·시간표로)
+                    let subject = crate::records::infer_subject(&tx, item.area, text, sid_opt)?;
+                    if let Some(&obs_id) = seen_obs.get(&(sid, format!("{area}|{subject}"))).filter(|_| sid > 0) {
+                        tx.execute(
+                            "UPDATE observations SET content = content || ' ' || ?2 WHERE id=?1 AND instr(content, ?2)=0",
+                            params![obs_id, text],
+                        )?;
+                        continue;
+                    }
                     tx.execute(
-                        "INSERT INTO observations(note_id, student_id, area, content, observed_on, source, edited, created_at, updated_at)
-                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8)",
-                        params![note_id, sid_opt, area, text, observed, source, edited, now_s],
+                        "INSERT INTO observations(note_id, student_id, area, content, observed_on, source, edited, created_at, updated_at, subject)
+                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8, ?9)",
+                        params![note_id, sid_opt, area, text, observed, source, edited, now_s, subject],
                     )?;
+                    if sid > 0 {
+                        seen_obs.insert((sid, format!("{area}|{subject}")), tx.last_insert_rowid());
+                    }
                     if let Some(s) = sid_opt {
                         tx.execute(
                             "INSERT OR IGNORE INTO note_students(note_id, student_id, source) VALUES (?1, ?2, ?3)",
@@ -345,10 +435,24 @@ pub fn apply_plan(conn: &mut Connection, note_id: i64, plan: &Plan, mode: ApplyM
             ItemKind::Event => {
                 let Some(d) = date.clone() else { continue };
                 tx.execute(
-                    "INSERT INTO events(layer, note_id, title, start_date, end_date, time, date_expr, source, edited,
+                    "INSERT INTO events(layer, note_id, title, start_date, end_date, time, date_expr, memo, source, edited,
                         remind_enabled, remind_offsets, remind_time, remind_custom_at, created_at, updated_at)
-                     VALUES ('note', ?1, ?2, ?3, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?12)",
-                    params![note_id, text, d, time, item.date_expr, source, edited, spec.enabled as i64, offsets, spec.time, custom, now_s],
+                     VALUES ('note', ?1, ?2, ?3, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?13)",
+                    params![
+                        note_id,
+                        text,
+                        d,
+                        time,
+                        item.date_expr,
+                        item.memo.as_deref().map(str::trim).unwrap_or(""),
+                        source,
+                        edited,
+                        spec.enabled as i64,
+                        offsets,
+                        spec.time,
+                        custom,
+                        now_s
+                    ],
                 )?;
                 new_targets.push((TargetKind::Event, tx.last_insert_rowid()));
             }
@@ -497,6 +601,7 @@ pub fn current_plan(conn: &Connection, note_id: i64) -> AppResult<Plan> {
             origin: if source == "manual" { ItemOrigin::Manual } else { ItemOrigin::Ai },
             done: false,
             edited: edited != 0,
+            memo: None,
         });
     }
     for t in crate::schedule::query_tasks(conn, "note_id=?1 ORDER BY id", &[&note_id])? {
@@ -514,6 +619,7 @@ pub fn current_plan(conn: &Connection, note_id: i64) -> AppResult<Plan> {
             origin: if t.source == "manual" { ItemOrigin::Manual } else { ItemOrigin::Ai },
             done: t.done,
             edited: t.edited,
+            memo: None,
         });
     }
     for e in crate::schedule::query_events(conn, "note_id=?1 ORDER BY id", &[&note_id])? {
@@ -531,6 +637,7 @@ pub fn current_plan(conn: &Connection, note_id: i64) -> AppResult<Plan> {
             origin: if e.source == "manual" { ItemOrigin::Manual } else { ItemOrigin::Ai },
             done: false,
             edited: e.edited,
+            memo: (!e.memo.trim().is_empty()).then(|| e.memo.clone()),
         });
     }
     for d in crate::schedule::query_duty_logs(conn, "note_id=?1 ORDER BY id", &[&note_id])? {
@@ -548,6 +655,7 @@ pub fn current_plan(conn: &Connection, note_id: i64) -> AppResult<Plan> {
             origin: if d.source == "manual" { ItemOrigin::Manual } else { ItemOrigin::Ai },
             done: d.done,
             edited: d.edited,
+            memo: None,
         });
     }
     Ok(Plan {
@@ -575,10 +683,10 @@ mod tests {
     fn raw_saved_first_and_survives_failure() {
         let db = Db::open_in_memory().unwrap();
         let c = db.lock();
-        let id = create_note(&c, "오늘 3교시 2-1 김민수 지각.", now()).unwrap();
+        let id = create_note(&c, "오늘 3교시 2-1 홍길동 지각.", now()).unwrap();
         set_status(&c, id, "failed", Some("AI 모델이 아직 설치되지 않았습니다."), now()).unwrap();
         let n = get_note(&c, id).unwrap();
-        assert_eq!(n.raw_text, "오늘 3교시 2-1 김민수 지각.");
+        assert_eq!(n.raw_text, "오늘 3교시 2-1 홍길동 지각.");
         assert_eq!(n.status, "failed");
         assert!(n.status_reason.unwrap().contains("설치"));
         assert!(create_note(&c, "   ", now()).is_err());
@@ -590,16 +698,16 @@ mod tests {
     fn apply_rule_plan_scenario_a_and_roundtrip() {
         let db = Db::open_in_memory().unwrap();
         let mut c = db.lock();
-        let raw = "오늘 3교시 2-1 김민수 지각. 담임에게 알리고 금요일까지 보호자 연락.";
+        let raw = "오늘 3교시 2-1 홍길동 지각. 담임에게 알리고 금요일까지 보호자 연락.";
         let id = create_note(&c, raw, now()).unwrap();
         let plan = classify::rule_plan(raw, &Ctx { today: now().date(), roster: &[], duties: &[] });
         apply_plan(&mut c, id, &plan, ApplyMode::Manual, now(), &spec()).unwrap();
         let n = get_note(&c, id).unwrap();
         assert_eq!(n.status, "manual");
-        assert!(n.chips.iter().any(|ch| ch.kind == "student" && ch.label == "2-1 김민수" && ch.area.as_deref() == Some("attendance")));
+        assert!(n.chips.iter().any(|ch| ch.kind == "student" && ch.label == "2-1 홍길동" && ch.area.as_deref() == Some("attendance")));
         assert!(n.chips.iter().any(|ch| ch.kind == "task" && ch.label == "보호자 연락" && ch.date.as_deref() == Some("2026-10-02")));
         // 학생이 자동 등록되고 관찰이 출결 영역에 연결된다
-        let sid: i64 = c.query_row("SELECT id FROM students WHERE name='김민수'", [], |r| r.get(0)).unwrap();
+        let sid: i64 = c.query_row("SELECT id FROM students WHERE name='홍길동'", [], |r| r.get(0)).unwrap();
         let area: String = c.query_row("SELECT area FROM observations WHERE student_id=?1", params![sid], |r| r.get(0)).unwrap();
         assert_eq!(area, "attendance");
         // 알림 예약: 10/1 08:30
@@ -633,6 +741,52 @@ mod tests {
         assert_eq!(left, 0);
     }
 
+    #[test]
+    fn general_and_work_tracks() {
+        let db = Db::open_in_memory().unwrap();
+        let mut c = db.lock();
+        let ctx = Ctx { today: now().date(), roster: &[], duties: &[] };
+        let work_raw = "금요일까지 결석계 받기";
+        let general_raw = "OO중 교무부장 연락옴";
+        let w = create_note(&c, work_raw, now()).unwrap();
+        let g = create_note(&c, general_raw, now()).unwrap();
+        apply_plan(&mut c, w, &classify::rule_plan(work_raw, &ctx), ApplyMode::Manual, now(), &spec()).unwrap();
+        apply_plan(&mut c, g, &classify::rule_plan(general_raw, &ctx), ApplyMode::Manual, now(), &spec()).unwrap();
+        let ids = |c: &Connection, track: &str| -> Vec<i64> {
+            list_notes(c, &NoteFilter { track: Some(track.into()), ..Default::default() }).unwrap().iter().map(|n| n.id).collect()
+        };
+        assert_eq!(ids(&c, "work"), vec![w]);
+        assert_eq!(ids(&c, "general"), vec![g], "항목이 없는 기록은 일반 기록");
+        assert!(get_note(&c, w).unwrap().is_work);
+        // 직접 옮기면 다시 분류해도 그대로
+        set_track(&c, g, Some("work"), now()).unwrap();
+        set_track(&c, w, Some("general"), now()).unwrap();
+        apply_plan(&mut c, w, &classify::rule_plan(work_raw, &ctx), ApplyMode::Manual, now(), &spec()).unwrap();
+        assert_eq!(ids(&c, "work"), vec![g]);
+        assert_eq!(ids(&c, "general"), vec![w]);
+        assert_eq!(get_note(&c, g).unwrap().track.as_deref(), Some("work"));
+        assert!(set_track(&c, g, Some("other"), now()).is_err());
+        set_track(&c, w, None, now()).unwrap();
+        assert!(get_note(&c, w).unwrap().is_work, "자동으로 되돌리면 AI 분류를 따른다");
+    }
+    #[test]
+    fn one_observation_per_student_and_area() {
+        let db = Db::open_in_memory().unwrap();
+        let mut c = db.lock();
+        let raw = "1-1 전우치 수업 중 잠. 전우치 수업 중 휴대폰 사용. 전우치 청소 당번 성실함.";
+        let id = create_note(&c, raw, now()).unwrap();
+        let roster = vec![crate::analysis::RosterEntry { id: 0, name: String::new(), class_label: Some("1-1".into()), number: None }];
+        let plan = classify::rule_plan(raw, &Ctx { today: now().date(), roster: &roster, duties: &[] });
+        apply_plan(&mut c, id, &plan, ApplyMode::Manual, now(), &spec()).unwrap();
+        let rows: Vec<(String, String)> = {
+            let mut st = c.prepare("SELECT area, content FROM observations WHERE note_id=?1 ORDER BY id").unwrap();
+            st.query_map(params![id], |r| Ok((r.get(0)?, r.get(1)?))).unwrap().collect::<Result<_, _>>().unwrap()
+        };
+        let subject: Vec<&(String, String)> = rows.iter().filter(|(a, _)| a == "subject").collect();
+        assert_eq!(subject.len(), 1, "같은 학생·같은 영역은 한 번만: {rows:?}");
+        assert!(subject[0].1.contains("잠") && subject[0].1.contains("휴대폰"), "{rows:?}");
+        assert_eq!(rows.iter().filter(|(a, _)| a == "behavior").count(), 1, "다른 영역은 따로: {rows:?}");
+    }
     #[test]
     fn group_observation_without_student_is_kept() {
         let db = Db::open_in_memory().unwrap();

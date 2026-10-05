@@ -1,0 +1,5 @@
+# Windows x64 (llvm-mingw) 빌드 설정 — 프로그램 본체(src-tauri)와 같다.
+# 실행기는 다른 DLL 없이 파일 하나로 돌아야 하므로 C 런타임 보조 라이브러리를 EXE 안에 정적으로 넣는다.
+[target.x86_64-pc-windows-gnullvm]
+linker = "x86_64-w64-mingw32-clang"
+rustflags = ["-C", "target-feature=+crt-static"]

@@ -41,7 +41,7 @@ try {
   await waitFor(() => app.evaluate(`!!document.querySelector('.capture textarea')`), { label: "첫 화면" });
 
   // 모델 설치 전에 쓴 기록 (시나리오 E 후반)
-  const before = await app.invoke("create_note", { raw: "어제 1-2 박서준 결석. 다음 주 월요일까지 결석계 받기." });
+  const before = await app.invoke("create_note", { raw: "어제 1-2 임꺽정 결석. 다음 주 월요일까지 결석계 받기." });
   await waitFor(async () => (await app.invoke("get_note_detail", { id: before.id })).note.status === "failed", { label: "설치 전 미분류" });
 
   // ── 모델 설치 ──
@@ -96,13 +96,13 @@ try {
   check("AI 엔진이 127.0.0.1 에서만 연결을 받음", st.local_only === true && st.listening.length > 0, st.listening.join(", "));
   metrics.listening = st.listening;
   const bChips = reclassified.note.chips;
-  check("재분류 결과: 1-2 박서준 출결(결석)", bChips.some((c) => c.kind === "student" && c.label.includes("박서준") && c.area === "attendance"), JSON.stringify(bChips));
+  check("재분류 결과: 1-2 임꺽정 출결(결석)", bChips.some((c) => c.kind === "student" && c.label.includes("임꺽정") && c.area === "attendance"), JSON.stringify(bChips));
   check("재분류 결과: 결석계 받기 → 다음 주 월요일(10/5)", bChips.some((c) => c.kind === "task" && c.date === "2026-10-05"), JSON.stringify(bChips));
 
   // ── 시나리오 A~D 를 AI 로 ──
   await app.invoke("create_duty", { input: { name: "교무기획", detail: "학사일정 관리", guide: "학사력 작성·변경, 수업일수, 교육청 학사일정 보고", keywords: "학사력, 수업일수", active: true } });
   const cases = [
-    { id: "A", raw: "오늘 3교시 2-1 김민수 지각. 담임에게 알리고 금요일까지 보호자 연락." },
+    { id: "A", raw: "오늘 3교시 2-1 홍길동 지각. 담임에게 알리고 금요일까지 보호자 연락." },
     { id: "B", raw: "학생들이 수업 중 손장난을 했고 지적을 받았습니다." },
     { id: "C", raw: "10월 15일 교육장 공감소통 방문" },
     { id: "D1", raw: "2학기 학사일정 변경안이 교무회의에서 확정됨." },
@@ -125,7 +125,7 @@ try {
     done[c.id] = d;
   }
   const A = done.A.note.chips;
-  check("A: 학생 2-1 김민수 + 출결", A.some((c) => c.kind === "student" && c.label === "2-1 김민수" && c.area === "attendance"), JSON.stringify(A));
+  check("A: 학생 2-1 홍길동 + 출결", A.some((c) => c.kind === "student" && c.label === "2-1 홍길동" && c.area === "attendance"), JSON.stringify(A));
   check("A: 보호자 연락 → 10/2(금) 할 일", A.some((c) => c.kind === "task" && c.label.includes("보호자") && c.date === "2026-10-02"), JSON.stringify(A));
   const B = done.B.note.chips;
   check("B: 출결로 분류하지 않음", B.every((c) => c.area !== "attendance"), JSON.stringify(B));
@@ -156,7 +156,7 @@ try {
   await app.screenshot(path.join(shots, `23-${tag}-notes-ai.png`));
 
   // ── AI 초안 ──
-  const sid = (await app.invoke("list_students", { query: "김민수" }))[0]?.id;
+  const sid = (await app.invoke("list_students", { query: "홍길동" }))[0]?.id;
   if (sid) {
     const blocks = await app.invoke("record_overview", { studentId: sid });
     const att = blocks.find((b) => b.area === "attendance");
@@ -170,7 +170,7 @@ try {
     }
     await app.nav("학생부 자료");
     await sleep(500);
-    await app.click("김민수", ".student-pick button");
+    await app.click("홍길동", ".student-pick button");
     await sleep(900);
     await app.screenshot(path.join(shots, `24-${tag}-records.png`));
   }

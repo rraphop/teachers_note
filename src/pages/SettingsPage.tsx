@@ -4,10 +4,89 @@ import { useEffect, useState } from "react";
 import { api, errorText } from "../api";
 import { ErrorBox, ReminderPicker } from "../components/Fields";
 import { IconDownload, IconFolder, IconRefresh, IconShield, IconTrash } from "../components/Icons";
-import { confirmDialog } from "../components/Modal";
+import { ExportPanel } from "../components/ExportTools";
+import { YearPanel } from "../components/YearTools";
+import { SchoolPanel } from "../components/SchoolSettings";
+import { confirmDialog, Modal } from "../components/Modal";
 import { bytes, fmtDateTime, gib, percent } from "../lib/format";
 import { useLoad, useStore } from "../lib/store";
-import type { AppSettings, CatalogEntry, DeviceInfo, DlProgress, RuntimeStatus } from "../types";
+import type { AppSettings, BackupCounts, BackupFile, CatalogEntry, DeviceInfo, DlProgress, RuntimeStatus } from "../types";
+
+function backupKind(kind: string): string {
+  if (kind.startsWith("auto")) return "자동";
+  if (kind.startsWith("before-restore")) return "되돌리기 전";
+  if (kind.startsWith("new-year")) return "새 학년도 전";
+  if (kind.startsWith("before-update")) return "업데이트 전";
+  return "직접";
+}
+
+/** 백업 되돌리기 확인: 백업 안의 양을 보여 주고, 지금 데이터는 먼저 백업된다는 것을 알린다 */
+function RestoreDialog({ backup, onClose }: { backup: BackupFile; onClose: () => void }) {
+  const [counts, setCounts] = useState<BackupCounts | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    api
+      .inspectBackup(backup.name)
+      .then(setCounts)
+      .catch((e) => setError(errorText(e)));
+  }, [backup.name]);
+  const go = async () => {
+    setBusy(true);
+    try {
+      await api.requestRestore(backup.name);
+      await api.restartApp();
+    } catch (e) {
+      setError(errorText(e));
+      setBusy(false);
+    }
+  };
+  return (
+    <Modal
+      title="백업으로 되돌리기"
+      onClose={onClose}
+      footer={
+        <>
+          <button onClick={onClose}>취소</button>
+          <button className="danger" onClick={() => void go()} disabled={!counts || busy}>
+            {busy ? "다시 시작하는 중…" : "되돌리고 다시 시작"}
+          </button>
+        </>
+      }
+    >
+      <p>
+        <b>{backup.taken_at}</b> ({backupKind(backup.kind)}) 백업으로 되돌립니다.
+      </p>
+      {!counts && !error && <p className="muted">백업 파일을 검사하는 중…</p>}
+      {error && <p className="error-box">{error}</p>}
+      {counts && (
+        <ul className="export-counts">
+          <li>
+            기록 <b>{counts.notes}</b>개
+          </li>
+          <li>
+            학생 <b>{counts.students}</b>명
+          </li>
+          <li>
+            학생 관찰 <b>{counts.observations}</b>개
+          </li>
+          <li>
+            할 일 <b>{counts.tasks}</b>개
+          </li>
+          <li>
+            일정 <b>{counts.events}</b>개
+          </li>
+          <li>
+            시간표 칸 <b>{counts.timetable_cells}</b>개
+          </li>
+        </ul>
+      )}
+      <p className="small muted">
+        이 백업 뒤에 적은 내용은 화면에서 사라집니다. 하지만 지금 데이터는 되돌리기 직전에 <b>‘되돌리기 전’ 백업</b>으로 먼저 저장되므로, 마음이 바뀌면 그 백업으로 다시 돌아올 수 있습니다. 프로그램이 다시 시작됩니다.
+      </p>
+    </Modal>
+  );
+}
 
 function useLiveProgress(): Record<string, DlProgress> {
   const [m, setM] = useState<Record<string, DlProgress>>({});
@@ -257,8 +336,39 @@ function RuntimePanel({ settings, onSettings }: { settings: AppSettings; onSetti
   );
 }
 
+/** 라이선스 및 저작권 — LICENSE.txt / THIRD_PARTY_NOTICES.txt 전문을 그대로 보여 준다 */
+function LicensePanel() {
+  const { toast } = useStore();
+  const texts = useLoad(() => api.licenseTexts(), []);
+  const [view, setView] = useState<"license" | "notices" | null>(null);
+  return (
+    <section className="panel" id="set-license">
+      <h2>라이선스 및 저작권</h2>
+      <p className="small">
+        Copyright (c) 2026 차일영. 모든 권리 보유. 무료로 사용할 수 있지만 오픈소스가 아니며, 분해·역설계·수정·재배포·상업적 이용은 허락하지 않습니다. 문의: rraphop@me.com
+      </p>
+      <div className="row gap wrap">
+        <button onClick={() => setView("license")} disabled={!texts.data}>
+          라이선스 전문 보기
+        </button>
+        <button onClick={() => setView("notices")} disabled={!texts.data}>
+          오픈소스·AI 모델 고지 보기
+        </button>
+        <button onClick={() => void api.openFolder("licenses").catch((e) => toast(errorText(e), "error"))}>
+          <IconFolder size={15} /> 라이선스 폴더 열기
+        </button>
+      </div>
+      {view && texts.data && (
+        <Modal title={view === "license" ? "라이선스 (LICENSE.txt)" : "제3자 구성요소 고지 (THIRD_PARTY_NOTICES.txt)"} onClose={() => setView(null)} wide>
+          <pre className="license-text">{view === "license" ? texts.data.license : texts.data.notices}</pre>
+        </Modal>
+      )}
+    </section>
+  );
+}
+
 export function SettingsPage() {
-  const { toast, params, version } = useStore();
+  const { toast, params, version, bump } = useStore();
   const info = useLoad(() => api.appInfo(), []);
   const catalog = useLoad(() => api.modelCatalog(), []);
   const live = useLiveProgress();
@@ -267,6 +377,7 @@ export function SettingsPage() {
   const [testMsg, setTestMsg] = useState<string | null>(null);
   const [wipeText, setWipeText] = useState("");
   const [wipePending, setWipePending] = useState(false);
+  const [restoring, setRestoring] = useState<BackupFile | null>(null);
   const backups = useLoad(() => api.listBackups(), []);
 
   useEffect(() => {
@@ -344,6 +455,7 @@ export function SettingsPage() {
     try {
       await api.setAutostart(on);
       info.reload();
+      bump();
     } catch (e) {
       toast(errorText(e), "error");
     }
@@ -361,8 +473,26 @@ export function SettingsPage() {
           <IconShield /> 개인정보 보호
         </h2>
         <p>기록과 AI 처리는 이 PC 안에서만 이루어집니다. 학생정보를 외부 AI 서비스로 보내지 않으며, 사용 기록을 수집하지 않습니다.</p>
-        <p className="small muted">인터넷은 AI 모델 파일을 받을 때만 씁니다. 이때도 학생 정보는 보내지 않습니다.</p>
+        <p className="small muted">인터넷은 AI 모델 파일을 받을 때와, 학교를 정했을 때 나이스 교육정보 개방 포털에서 시간표·급식·학사일정을 받을 때만 씁니다. 이때도 학생 정보는 보내지 않고 나이스에는 학교 코드만 보냅니다.</p>
+        {settings && (
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={settings.store_rrn}
+              onChange={(e) => {
+                const on = e.target.checked;
+                const go = on ? Promise.resolve(true) : confirmDialog("저장을 끄면 이미 저장한 주민등록번호도 모두 지웁니다. 계속할까요?", { okText: "끄고 지우기", danger: true });
+                void go.then((ok) => {
+                  if (ok) void saveSettings({ ...settings, store_rrn: on });
+                });
+              }}
+            />
+            나이스 명렬표를 가져올 때 주민등록번호도 저장 (기본 꺼짐 · 켜도 뒷자리는 가린 채 저장하고, 학생 상세에서만 보입니다)
+          </label>
+        )}
       </section>
+
+      {settings && <SchoolPanel settings={settings} onSave={saveSettings} />}
 
       <section className="panel" id="set-models">
         <h2>AI 모델</h2>
@@ -408,13 +538,17 @@ export function SettingsPage() {
           </label>
           <label className="check">
             <input type="checkbox" checked={info.data?.autostart ?? false} onChange={(e) => void toggleAutostart(e.target.checked)} />
-            Windows에 로그인하면 교무수첩을 알림 영역에서 자동 시작
+            Windows에 로그인하면 교무수첩을 자동으로 실행 (왼쪽 메뉴 ‘설정’ 아래에서도 켜고 끌 수 있습니다)
           </label>
           <p className="hint warn">
             알림은 교무수첩이 실행 중일 때만 표시됩니다. 프로그램이 완전히 꺼져 있던 동안의 알림은 다음 실행 때 ‘놓친 알림’으로 한 번에 알려 드립니다. 창을 닫아도 계속 실행되게 하거나 자동 시작을 켜면 알림을 놓치지 않습니다.
           </p>
         </section>
       )}
+
+      <YearPanel />
+
+      <ExportPanel />
 
       <section className="panel" id="set-data">
         <h2>데이터</h2>
@@ -426,7 +560,15 @@ export function SettingsPage() {
             </dd>
             <dt>프로그램 위치</dt>
             <dd>
-              <code>{info.data.exe_dir}</code>
+              {info.data.launcher_path ? (
+                <>
+                  <code>{info.data.launcher_path}</code>
+                  <br />
+                  <small className="muted">파일 하나 버전 — 이 파일을 새 버전으로 덮어쓰면 업데이트됩니다. 실행할 때 풀어 쓰는 위치: {info.data.exe_dir}</small>
+                </>
+              ) : (
+                <code>{info.data.exe_dir}</code>
+              )}
             </dd>
           </dl>
         )}
@@ -452,17 +594,35 @@ export function SettingsPage() {
           <button onClick={() => void api.openFolder("logs")}>기술 로그 열기</button>
         </div>
         {backups.data && backups.data.length > 0 && (
-          <details>
-            <summary>백업 {backups.data.length}개 (하루 한 번 자동 백업, 최근 14개 보관)</summary>
-            <ul className="plain-list">
-              {backups.data.map((b) => (
-                <li key={b.name}>
-                  {b.name} · {bytes(b.size)}
-                </li>
-              ))}
-            </ul>
+          <details className="backup-list">
+            <summary>
+              백업 {backups.data.length}개 — 되돌리기 (자동 백업은 하루 한 번, 최근 14개 보관)
+            </summary>
+            <table className="backup-table">
+              <thead>
+                <tr>
+                  <th>백업 시각</th>
+                  <th>종류</th>
+                  <th>크기</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {backups.data.map((b) => (
+                  <tr key={b.name}>
+                    <td>{b.taken_at || b.name}</td>
+                    <td>{backupKind(b.kind)}</td>
+                    <td>{bytes(b.size)}</td>
+                    <td>
+                      <button onClick={() => setRestoring(b)}>되돌리기</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </details>
         )}
+        {restoring && <RestoreDialog backup={restoring} onClose={() => setRestoring(null)} />}
         <div className="danger-zone">
           <h3>모든 로컬 데이터 삭제</h3>
           {wipePending ? (
@@ -500,10 +660,10 @@ export function SettingsPage() {
 
       <section className="panel" id="set-about">
         <h2>정보</h2>
-        <p className="small">
-          로컬 AI 교무수첩 {info.data?.version} · AI 엔진 llama.cpp (MIT) · 라이선스 전문은 프로그램 폴더의 licenses 폴더에 있습니다.
-        </p>
+        <p className="small">로컬 AI 교무수첩 {info.data?.version} · AI 엔진 llama.cpp</p>
       </section>
+
+      <LicensePanel />
     </div>
   );
 }

@@ -62,7 +62,7 @@ export function SearchPage() {
         <h1>검색</h1>
       </div>
       <div className="search-bar">
-        <input ref={ref} className="search-big" value={text} onChange={(e) => setText(e.target.value)} placeholder="찾을 낱말 (예: 김민수, 지각, 공개수업)" />
+        <input ref={ref} className="search-big" value={text} onChange={(e) => setText(e.target.value)} placeholder="찾을 낱말 (예: 홍길동, 지각, 공개수업)" />
       </div>
       <div className="filters row gap wrap">
         <label className="inline">
