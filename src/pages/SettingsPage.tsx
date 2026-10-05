@@ -468,201 +468,208 @@ export function SettingsPage() {
         <h1>설정</h1>
       </div>
 
-      <section className="panel privacy" id="set-privacy">
-        <h2>
-          <IconShield /> 개인정보 보호
-        </h2>
-        <p>기록과 AI 처리는 이 PC 안에서만 이루어집니다. 학생정보를 외부 AI 서비스로 보내지 않으며, 사용 기록을 수집하지 않습니다.</p>
-        <p className="small muted">인터넷은 AI 모델 파일을 받을 때와, 학교를 정했을 때 나이스 교육정보 개방 포털에서 시간표·급식·학사일정을 받을 때만 씁니다. 이때도 학생 정보는 보내지 않고 나이스에는 학교 코드만 보냅니다.</p>
-        {settings && (
-          <label className="check">
-            <input
-              type="checkbox"
-              checked={settings.store_rrn}
-              onChange={(e) => {
-                const on = e.target.checked;
-                const go = on ? Promise.resolve(true) : confirmDialog("저장을 끄면 이미 저장한 주민등록번호도 모두 지웁니다. 계속할까요?", { okText: "끄고 지우기", danger: true });
-                void go.then((ok) => {
-                  if (ok) void saveSettings({ ...settings, store_rrn: on });
-                });
-              }}
-            />
-            나이스 명렬표를 가져올 때 주민등록번호도 저장 (기본 꺼짐 · 켜도 뒷자리는 가린 채 저장하고, 학생 상세에서만 보입니다)
-          </label>
-        )}
-      </section>
+      {/* 넓은 화면에서는 두 단으로 (좁으면 한 단으로 차례대로) */}
+      <div className="settings-cols">
+        <div className="settings-col">
+          <section className="panel privacy" id="set-privacy">
+            <h2>
+              <IconShield /> 개인정보 보호
+            </h2>
+            <p>기록과 AI 처리는 이 PC 안에서만 이루어집니다. 학생정보를 외부 AI 서비스로 보내지 않으며, 사용 기록을 수집하지 않습니다.</p>
+            <p className="small muted">인터넷은 AI 모델 파일을 받을 때와, 학교를 정했을 때 나이스 교육정보 개방 포털에서 시간표·급식·학사일정을 받을 때만 씁니다. 이때도 학생 정보는 보내지 않고 나이스에는 학교 코드만 보냅니다.</p>
+            {settings && (
+              <label className="check">
+                <input
+                  type="checkbox"
+                  checked={settings.store_rrn}
+                  onChange={(e) => {
+                    const on = e.target.checked;
+                    const go = on ? Promise.resolve(true) : confirmDialog("저장을 끄면 이미 저장한 주민등록번호도 모두 지웁니다. 계속할까요?", { okText: "끄고 지우기", danger: true });
+                    void go.then((ok) => {
+                      if (ok) void saveSettings({ ...settings, store_rrn: on });
+                    });
+                  }}
+                />
+                나이스 명렬표를 가져올 때 주민등록번호도 저장 (기본 꺼짐 · 켜도 뒷자리는 가린 채 저장하고, 학생 상세에서만 보입니다)
+              </label>
+            )}
+          </section>
 
-      {settings && <SchoolPanel settings={settings} onSave={saveSettings} />}
+          {settings && <SchoolPanel settings={settings} onSave={saveSettings} />}
 
-      <section className="panel" id="set-models">
-        <h2>AI 모델</h2>
-        {catalog.error && <ErrorBox error={catalog.error} onRetry={catalog.reload} />}
-        <DeviceCard device={catalog.data?.device ?? null} onRefresh={() => void refreshDevice()} busy={deviceBusy} />
-        <div className="model-grid">
-          {entries.map((e) => (
-            <ModelCard key={e.model.id} e={e} live={live[e.model.id]} onChanged={catalog.reload} />
-          ))}
-        </div>
-        <div className="row gap wrap">
-          <button onClick={() => void importFile()}>파일로 설치 (USB 등으로 받은 .gguf)</button>
-          <button onClick={() => void api.openFolder("models")}>
-            <IconFolder size={15} /> 모델 파일 위치 열기
-          </button>
-          <small className="muted">모델 파일은 크기와 SHA-256을 확인한 뒤에만 설치됩니다.</small>
-        </div>
-      </section>
-
-      {settings && (
-        <section className="panel" id="set-engine">
-          <h2>AI 엔진</h2>
-          <RuntimePanel settings={settings} onSettings={(s) => void saveSettings(s)} />
-          <label className="check">
-            <input type="checkbox" checked={settings.ai_auto_classify} onChange={(e) => void saveSettings({ ...settings, ai_auto_classify: e.target.checked })} />
-            기록을 저장하면 AI가 자동으로 정리 (끄면 ‘AI로 분류’를 눌렀을 때만 정리)
-          </label>
-        </section>
-      )}
-
-      {settings && (
-        <section className="panel" id="set-notify">
-          <h2>알림</h2>
-          <p className="small">새로 생기는 할 일·업무의 기본 알림입니다. 항목마다 따로 바꿀 수 있습니다.</p>
-          <ReminderPicker value={settings.remind_default} onChange={(r) => void saveSettings({ ...settings, remind_default: { ...r, custom_at: null } })} hasDate />
-          <div className="row gap wrap">
-            <button onClick={() => void testNotify()}>테스트 알림 보내기</button>
-            {testMsg && <span className={testMsg.startsWith("알림 실패") ? "err" : "ok"}>{testMsg}</span>}
-          </div>
-          <label className="check">
-            <input type="checkbox" checked={settings.close_to_tray} onChange={(e) => void saveSettings({ ...settings, close_to_tray: e.target.checked })} />
-            창을 닫아도 알림 영역(시계 옆)에서 계속 실행
-          </label>
-          <label className="check">
-            <input type="checkbox" checked={info.data?.autostart ?? false} onChange={(e) => void toggleAutostart(e.target.checked)} />
-            Windows에 로그인하면 교무수첩을 자동으로 실행 (왼쪽 메뉴 ‘설정’ 아래에서도 켜고 끌 수 있습니다)
-          </label>
-          <p className="hint warn">
-            알림은 교무수첩이 실행 중일 때만 표시됩니다. 프로그램이 완전히 꺼져 있던 동안의 알림은 다음 실행 때 ‘놓친 알림’으로 한 번에 알려 드립니다. 창을 닫아도 계속 실행되게 하거나 자동 시작을 켜면 알림을 놓치지 않습니다.
-          </p>
-        </section>
-      )}
-
-      <YearPanel />
-
-      <ExportPanel />
-
-      <section className="panel" id="set-data">
-        <h2>데이터</h2>
-        {info.data && (
-          <dl className="spec">
-            <dt>사용자 데이터</dt>
-            <dd>
-              <code>{info.data.data_dir}</code>
-            </dd>
-            <dt>프로그램 위치</dt>
-            <dd>
-              {info.data.launcher_path ? (
-                <>
-                  <code>{info.data.launcher_path}</code>
-                  <br />
-                  <small className="muted">파일 하나 버전 — 이 파일을 새 버전으로 덮어쓰면 업데이트됩니다. 실행할 때 풀어 쓰는 위치: {info.data.exe_dir}</small>
-                </>
-              ) : (
-                <code>{info.data.exe_dir}</code>
-              )}
-            </dd>
-          </dl>
-        )}
-        <p className="small muted">프로그램 폴더를 옮기거나 새 버전으로 바꿔도 기록과 모델은 사용자 데이터 위치에 그대로 남습니다.</p>
-        <div className="row gap wrap">
-          <button onClick={() => void api.openFolder("data")}>
-            <IconFolder size={15} /> 사용자 데이터 위치 열기
-          </button>
-          <button onClick={() => void api.openFolder("backups")}>백업 폴더 열기</button>
-          <button
-            onClick={() =>
-              void api
-                .backupNow()
-                .then((p) => {
-                  toast(`백업했습니다: ${p}`);
-                  backups.reload();
-                })
-                .catch((e) => toast(errorText(e), "error"))
-            }
-          >
-            지금 백업
-          </button>
-          <button onClick={() => void api.openFolder("logs")}>기술 로그 열기</button>
-        </div>
-        {backups.data && backups.data.length > 0 && (
-          <details className="backup-list">
-            <summary>
-              백업 {backups.data.length}개 — 되돌리기 (자동 백업은 하루 한 번, 최근 14개 보관)
-            </summary>
-            <table className="backup-table">
-              <thead>
-                <tr>
-                  <th>백업 시각</th>
-                  <th>종류</th>
-                  <th>크기</th>
-                  <th />
-                </tr>
-              </thead>
-              <tbody>
-                {backups.data.map((b) => (
-                  <tr key={b.name}>
-                    <td>{b.taken_at || b.name}</td>
-                    <td>{backupKind(b.kind)}</td>
-                    <td>{bytes(b.size)}</td>
-                    <td>
-                      <button onClick={() => setRestoring(b)}>되돌리기</button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </details>
-        )}
-        {restoring && <RestoreDialog backup={restoring} onClose={() => setRestoring(null)} />}
-        <div className="danger-zone">
-          <h3>모든 로컬 데이터 삭제</h3>
-          {wipePending ? (
+          <section className="panel" id="set-models">
+            <h2>AI 모델</h2>
+            {catalog.error && <ErrorBox error={catalog.error} onRetry={catalog.reload} />}
+            <DeviceCard device={catalog.data?.device ?? null} onRefresh={() => void refreshDevice()} busy={deviceBusy} />
+            <div className="model-grid">
+              {entries.map((e) => (
+                <ModelCard key={e.model.id} e={e} live={live[e.model.id]} onChanged={catalog.reload} />
+              ))}
+            </div>
             <div className="row gap wrap">
-              <span className="err">삭제가 예약되었습니다. 프로그램을 다시 시작하면 지워집니다.</span>
-              <button className="danger" onClick={() => void api.restartApp()}>
-                지금 다시 시작해서 지우기
+              <button onClick={() => void importFile()}>파일로 설치 (USB 등으로 받은 .gguf)</button>
+              <button onClick={() => void api.openFolder("models")}>
+                <IconFolder size={15} /> 모델 파일 위치 열기
               </button>
+              <small className="muted">모델 파일은 크기와 SHA-256을 확인한 뒤에만 설치됩니다.</small>
+            </div>
+          </section>
+
+          {settings && (
+            <section className="panel" id="set-engine">
+              <h2>AI 엔진</h2>
+              <RuntimePanel settings={settings} onSettings={(s) => void saveSettings(s)} />
+              <label className="check">
+                <input type="checkbox" checked={settings.ai_auto_classify} onChange={(e) => void saveSettings({ ...settings, ai_auto_classify: e.target.checked })} />
+                기록을 저장하면 AI가 자동으로 정리 (끄면 ‘AI로 분류’를 눌렀을 때만 정리)
+              </label>
+            </section>
+          )}
+
+        </div>
+        <div className="settings-col">
+          {settings && (
+            <section className="panel" id="set-notify">
+              <h2>알림</h2>
+              <p className="small">새로 생기는 할 일·업무의 기본 알림입니다. 항목마다 따로 바꿀 수 있습니다.</p>
+              <ReminderPicker value={settings.remind_default} onChange={(r) => void saveSettings({ ...settings, remind_default: { ...r, custom_at: null } })} hasDate />
+              <div className="row gap wrap">
+                <button onClick={() => void testNotify()}>테스트 알림 보내기</button>
+                {testMsg && <span className={testMsg.startsWith("알림 실패") ? "err" : "ok"}>{testMsg}</span>}
+              </div>
+              <label className="check">
+                <input type="checkbox" checked={settings.close_to_tray} onChange={(e) => void saveSettings({ ...settings, close_to_tray: e.target.checked })} />
+                창을 닫아도 알림 영역(시계 옆)에서 계속 실행
+              </label>
+              <label className="check">
+                <input type="checkbox" checked={info.data?.autostart ?? false} onChange={(e) => void toggleAutostart(e.target.checked)} />
+                Windows에 로그인하면 교무수첩을 자동으로 실행 (왼쪽 메뉴 ‘설정’ 아래에서도 켜고 끌 수 있습니다)
+              </label>
+              <p className="hint warn">
+                알림은 교무수첩이 실행 중일 때만 표시됩니다. 프로그램이 완전히 꺼져 있던 동안의 알림은 다음 실행 때 ‘놓친 알림’으로 한 번에 알려 드립니다. 창을 닫아도 계속 실행되게 하거나 자동 시작을 켜면 알림을 놓치지 않습니다.
+              </p>
+            </section>
+          )}
+
+          <YearPanel />
+
+          <ExportPanel />
+
+          <section className="panel" id="set-data">
+            <h2>데이터</h2>
+            {info.data && (
+              <dl className="spec">
+                <dt>사용자 데이터</dt>
+                <dd>
+                  <code>{info.data.data_dir}</code>
+                </dd>
+                <dt>프로그램 위치</dt>
+                <dd>
+                  {info.data.launcher_path ? (
+                    <>
+                      <code>{info.data.launcher_path}</code>
+                      <br />
+                      <small className="muted">파일 하나 버전 — 이 파일을 새 버전으로 덮어쓰면 업데이트됩니다. 실행할 때 풀어 쓰는 위치: {info.data.exe_dir}</small>
+                    </>
+                  ) : (
+                    <code>{info.data.exe_dir}</code>
+                  )}
+                </dd>
+              </dl>
+            )}
+            <p className="small muted">프로그램 폴더를 옮기거나 새 버전으로 바꿔도 기록과 모델은 사용자 데이터 위치에 그대로 남습니다.</p>
+            <div className="row gap wrap">
+              <button onClick={() => void api.openFolder("data")}>
+                <IconFolder size={15} /> 사용자 데이터 위치 열기
+              </button>
+              <button onClick={() => void api.openFolder("backups")}>백업 폴더 열기</button>
               <button
                 onClick={() =>
-                  void api.cancelWipe().then(() => {
-                    setWipePending(false);
-                    toast("삭제 예약을 취소했습니다.");
-                  })
+                  void api
+                    .backupNow()
+                    .then((p) => {
+                      toast(`백업했습니다: ${p}`);
+                      backups.reload();
+                    })
+                    .catch((e) => toast(errorText(e), "error"))
                 }
               >
-                예약 취소
+                지금 백업
               </button>
+              <button onClick={() => void api.openFolder("logs")}>기술 로그 열기</button>
             </div>
-          ) : (
-            <>
-              <p className="small">
-                기록, 학생, 일정, 학생부 자료, AI 모델, 백업을 이 PC에서 모두 지웁니다. 확인 문구 <b>모두 삭제</b>를 입력한 뒤, Windows 확인 창에서 한 번 더 승인해야 합니다.
-              </p>
-              <div className="row gap">
-                <input value={wipeText} onChange={(e) => setWipeText(e.target.value)} placeholder="모두 삭제" />
-                <button className="danger" onClick={() => void wipe()} disabled={wipeText.trim() !== "모두 삭제"}>
-                  삭제 예약
-                </button>
-              </div>
-            </>
-          )}
+            {backups.data && backups.data.length > 0 && (
+              <details className="backup-list">
+                <summary>
+                  백업 {backups.data.length}개 — 되돌리기 (자동 백업은 하루 한 번, 최근 14개 보관)
+                </summary>
+                <table className="backup-table">
+                  <thead>
+                    <tr>
+                      <th>백업 시각</th>
+                      <th>종류</th>
+                      <th>크기</th>
+                      <th />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {backups.data.map((b) => (
+                      <tr key={b.name}>
+                        <td>{b.taken_at || b.name}</td>
+                        <td>{backupKind(b.kind)}</td>
+                        <td>{bytes(b.size)}</td>
+                        <td>
+                          <button onClick={() => setRestoring(b)}>되돌리기</button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </details>
+            )}
+            {restoring && <RestoreDialog backup={restoring} onClose={() => setRestoring(null)} />}
+            <div className="danger-zone">
+              <h3>모든 로컬 데이터 삭제</h3>
+              {wipePending ? (
+                <div className="row gap wrap">
+                  <span className="err">삭제가 예약되었습니다. 프로그램을 다시 시작하면 지워집니다.</span>
+                  <button className="danger" onClick={() => void api.restartApp()}>
+                    지금 다시 시작해서 지우기
+                  </button>
+                  <button
+                    onClick={() =>
+                      void api.cancelWipe().then(() => {
+                        setWipePending(false);
+                        toast("삭제 예약을 취소했습니다.");
+                      })
+                    }
+                  >
+                    예약 취소
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <p className="small">
+                    기록, 학생, 일정, 학생부 자료, AI 모델, 백업을 이 PC에서 모두 지웁니다. 확인 문구 <b>모두 삭제</b>를 입력한 뒤, Windows 확인 창에서 한 번 더 승인해야 합니다.
+                  </p>
+                  <div className="row gap">
+                    <input value={wipeText} onChange={(e) => setWipeText(e.target.value)} placeholder="모두 삭제" />
+                    <button className="danger" onClick={() => void wipe()} disabled={wipeText.trim() !== "모두 삭제"}>
+                      삭제 예약
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </section>
+
+          <section className="panel" id="set-about">
+            <h2>정보</h2>
+            <p className="small">로컬 AI 교무수첩 {info.data?.version} · AI 엔진 llama.cpp</p>
+          </section>
         </div>
-      </section>
-
-      <section className="panel" id="set-about">
-        <h2>정보</h2>
-        <p className="small">로컬 AI 교무수첩 {info.data?.version} · AI 엔진 llama.cpp</p>
-      </section>
-
+      </div>
+      {/* 라이선스 및 저작권은 두 단 아래, 설정 맨 아래 */}
       <LicensePanel />
     </div>
   );

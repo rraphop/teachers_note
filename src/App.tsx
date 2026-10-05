@@ -263,8 +263,7 @@ export function App() {
         </div>
       </nav>
       <main className="main">
-        {/* 오늘 화면은 칸 배치로 화면 너비를 꽉 채운다 */}
-        <div className={`content ${page === "today" ? "wide" : ""}`}>
+        <div className="content">
           {page === "today" && <TodayPage />}
           {page === "calendar" && <CalendarPage />}
           {page === "timetable" && <TimetablePage />}

@@ -73,16 +73,18 @@ export function TasksPage() {
       {list.length === 0 && !tasks.loading ? (
         <Empty title={tab === "open" ? "해야 할 일이 없습니다." : "완료한 일이 없습니다."} />
       ) : (
-        groups
-          .filter(([, g]) => g.length > 0)
-          .map(([label, g]) => (
-            <section key={label} className={`panel bucket ${label === "기한 지남" ? "overdue" : ""}`}>
-              <h2>
-                {label} <span className={`count ${label === "기한 지남" ? "danger" : ""}`}>{g.length}</span>
-              </h2>
-              <ul className="agenda">{g.map((t) => <AgendaRow key={t.id} item={toAgenda(t)} />)}</ul>
-            </section>
-          ))
+        <div className="bucket-grid">
+          {groups
+            .filter(([, g]) => g.length > 0)
+            .map(([label, g]) => (
+              <section key={label} className={`panel bucket ${label === "기한 지남" ? "overdue" : ""}`}>
+                <h2>
+                  {label} <span className={`count ${label === "기한 지남" ? "danger" : ""}`}>{g.length}</span>
+                </h2>
+                <ul className="agenda">{g.map((t) => <AgendaRow key={t.id} item={toAgenda(t)} />)}</ul>
+              </section>
+            ))}
+        </div>
       )}
     </div>
   );
