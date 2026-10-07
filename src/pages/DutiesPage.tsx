@@ -6,6 +6,7 @@ import { Empty, ErrorBox } from "../components/Fields";
 import { IconEdit, IconPlus } from "../components/Icons";
 import { confirmDialog, Modal } from "../components/Modal";
 import { fmtDate, fmtDateTime } from "../lib/format";
+import { isNewItem, useNewSince } from "../lib/seen";
 import { useLoad, useStore } from "../lib/store";
 import type { Duty, DutyInput, DutyLog, Task } from "../types";
 
@@ -106,7 +107,7 @@ function toAgendaTask(t: Task) {
   };
 }
 
-function LogRow({ l }: { l: DutyLog }) {
+function LogRow({ l, since }: { l: DutyLog; since: string | null }) {
   const { toast, bump, navigate } = useStore();
   const toggle = async (done: boolean) => {
     await api.setDutyLogDone(l.id, done).catch((e) => toast(errorText(e), "error"));
@@ -116,7 +117,10 @@ function LogRow({ l }: { l: DutyLog }) {
     <li className={`log-row ${l.done ? "done" : ""}`}>
       <input type="checkbox" className="big-check" checked={l.done} onChange={(e) => void toggle(e.target.checked)} aria-label="처리 완료" />
       <div className="grow">
-        <p className="log-content">{l.content}</p>
+        <p className="log-content">
+          {isNewItem(l, since) && <span className="new-tag">새</span>}
+          {l.content}
+        </p>
         <div className="agenda-meta">
           <span className="muted">{fmtDateTime(l.created_at)}</span>
           {l.date && <span className="tag">{fmtDate(l.date)}</span>}
@@ -139,6 +143,7 @@ function LogRow({ l }: { l: DutyLog }) {
 
 export function DutiesPage() {
   const { params, bump } = useStore();
+  const since = useNewSince("duties");
   const [sel, setSel] = useState<number | null>(params.dutyId ?? null);
   const [form, setForm] = useState<Duty | null | "new">(null);
   const duties = useLoad(() => api.listDuties(), []);
@@ -217,7 +222,7 @@ export function DutiesPage() {
               업무 기록 <span className="count">{board.data?.logs.length ?? 0}</span>
             </h2>
             {board.data && board.data.logs.length === 0 && <p className="muted small">업무 기록이 없습니다.</p>}
-            <ul className="log-list">{board.data?.logs.map((l) => <LogRow key={l.id} l={l} />)}</ul>
+            <ul className="log-list">{board.data?.logs.map((l) => <LogRow key={l.id} l={l} since={since} />)}</ul>
           </section>
         </div>
       </div>

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api, errorText } from "../api";
 import { useStore } from "../lib/store";
+import { AiProgressRing } from "./AiProgressRing";
 
 const DRAFT_KEY = "tn.capture.draft";
 
@@ -97,6 +98,7 @@ export function QuickCapture() {
           aria-label="빠른 기록"
           rows={1}
         />
+        <AiProgressRing />
         <button className="primary capture-send" onClick={() => void save()} disabled={busy || !text.trim()} title="기록 저장 (Ctrl+Enter)">
           {busy ? "저장 중…" : "기록"}
         </button>

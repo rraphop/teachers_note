@@ -43,6 +43,8 @@ pub struct StudentDto {
     pub prev_record: String,
     pub remark: String,
     pub rrn: String,
+    /// 보호자 연락처 (관계 + 번호, 최대 4개)
+    pub contacts: Vec<crate::profile::Contact>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -135,6 +137,15 @@ pub fn set_roster_field(conn: &Connection, id: i64, field: &str, value: &str, no
     };
     if n == 0 {
         return Err(AppError::not_found("학생을 찾을 수 없습니다."));
+    }
+    // 예전 '보호자 연락처' 한 칸을 고치면 첫 연락처로 (나이스 명렬표 가져오기 등)
+    if field == "guardian_phone" {
+        let first: Option<String> = conn
+            .query_row("SELECT phone FROM student_contacts WHERE student_id=?1 ORDER BY pos, id LIMIT 1", params![id], |r| r.get(0))
+            .optional()?;
+        if first.as_deref().map(str::trim) != Some(v) {
+            crate::profile::set_first_contact(conn, id, v, now)?;
+        }
     }
     Ok(())
 }
@@ -304,6 +315,7 @@ fn map_student(r: &rusqlite::Row) -> rusqlite::Result<StudentDto> {
         prev_record: r.get(17)?,
         remark: r.get(18)?,
         rrn: r.get(19)?,
+        contacts: vec![],
     })
 }
 
@@ -333,8 +345,10 @@ pub fn list_students(conn: &Connection, query: Option<&str>, class_id: Option<i6
     let mut rows = st
         .query_map(rusqlite::params_from_iter(args.iter().map(|b| b.as_ref())), map_student)?
         .collect::<Result<Vec<_>, _>>()?;
+    let mut contacts = crate::profile::all_contacts(conn)?;
     for s in rows.iter_mut() {
         fill_area_counts(conn, s)?;
+        s.contacts = contacts.remove(&s.id).unwrap_or_default();
     }
     Ok(rows)
 }
@@ -345,6 +359,7 @@ pub fn get_student(conn: &Connection, id: i64) -> AppResult<StudentDto> {
         .optional()?
         .ok_or_else(|| AppError::not_found("학생을 찾을 수 없습니다."))?;
     fill_area_counts(conn, &mut s)?;
+    s.contacts = crate::profile::contacts(conn, s.id)?;
     Ok(s)
 }
 

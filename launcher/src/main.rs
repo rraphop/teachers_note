@@ -1,12 +1,14 @@
-//! 로컬 AI 교무수첩 — 파일 하나 실행기 ("교무수첩(0.61).exe").
+//! 로컬 AI 교무수첩 — 파일 하나 실행기 ("교무수첩_1.0.0.exe").
 //!
-//! 바탕화면에 이 파일 하나만 두고 실행한다. 새 버전은 "교무수첩(0.7).exe" 처럼 새 이름으로 받는다.
+//! 바탕화면에 이 파일 하나만 두고 실행한다. 새 버전은 "교무수첩_1.0.1.exe" 처럼 새 이름으로 받는다.
+//! (1.0 까지 쓰던 예전 이름 "교무수첩(0.9).exe" 도 알아보고 정리 대상에 넣는다)
 //!
 //! 1. 안에 든 프로그램 묶음(화면·AI 엔진 llama.cpp·라이선스)의 파일 목록과 SHA-256 을 읽는다.
 //! 2. 더 새로운 버전을 이미 풀어 쓴 적이 있으면(지난 버전 파일을 잘못 켠 경우) 새 버전을 쓰라고 알린다.
 //! 3. %LOCALAPPDATA%\TeacherNotebookV2\program\<버전> 의 파일이 목록과 모두 같으면 바로 실행한다.
 //!    다르거나 없으면(처음 실행·업데이트 직후·파일 손상) "준비 중" 창을 띄우고 새로 풀어 검사한 뒤 실행한다.
-//! 4. 새 버전을 처음 풀었을 때, 같은 폴더의 지난 버전 파일("교무수첩(0.6).exe")을 휴지통으로 옮길지 묻는다.
+//! 4. 새 버전을 처음 풀었을 때, 같은 폴더의 지난 버전 파일("교무수첩_0.9.0.exe", 예전 이름 "교무수첩(0.9).exe")을
+//!    휴지통으로 옮길지 묻는다. 같은 버전이라도 예전 이름이면 함께 묻는다.
 //! 5. 더 오래된 버전 폴더만 정리한다. 기록·AI 모델 등 사용자 데이터는 건드리지 않는다.
 //!
 //! AI 엔진은 따로 도는 프로그램(llama-server.exe)이고, 화면 부품(WebView2Loader.dll)도 파일로 있어야 해서
@@ -134,14 +136,30 @@ fn parse_ver(s: &str) -> Option<Ver> {
     Some((a, b, c))
 }
 
-/// 화면·파일 이름에 쓰는 버전: "0.6.1" → "0.61", "0.6.0" → "0.6"
+/// 화면에 쓰는 버전: "0.6.1" → "0.61", "0.6.0" → "0.6"
 fn display_ver(v: Ver) -> String {
     if v.2 == 0 { format!("{}.{}", v.0, v.1) } else { format!("{}.{}{}", v.0, v.1, v.2) }
 }
 
-/// 파일 이름 "교무수첩(0.61).exe" 의 버전 → (0, 6, 1)
-fn file_ver(name: &str) -> Option<Ver> {
-    let inner = name.strip_prefix("교무수첩(")?.strip_suffix(").exe").or_else(|| name.strip_prefix("교무수첩(")?.strip_suffix(").EXE"))?;
+/// 파일 이름 "교무수첩_1.0.0.exe" (안내 문구에도 이 이름을 쓴다)
+fn file_name(v: Ver) -> String {
+    format!("교무수첩_{}.{}.{}.exe", v.0, v.1, v.2)
+}
+
+/// 파일 이름의 버전과 예전 이름 여부: "교무수첩_1.0.0.exe" → ((1, 0, 0), false), 예전 "교무수첩(0.61).exe" → ((0, 6, 1), true)
+fn file_ver(name: &str) -> Option<(Ver, bool)> {
+    let stem = name.strip_suffix(".exe").or_else(|| name.strip_suffix(".EXE"))?;
+    if let Some(v) = stem.strip_prefix("교무수첩_") {
+        let mut it = v.split('.');
+        let ver = (it.next()?.parse().ok()?, it.next()?.parse().ok()?, it.next()?.parse().ok()?);
+        return if it.next().is_none() { Some((ver, false)) } else { None };
+    }
+    legacy_file_ver(stem).map(|v| (v, true))
+}
+
+/// 1.0 까지의 예전 이름 "교무수첩(0.61)" (".exe" 뗀 것) → (0, 6, 1)
+fn legacy_file_ver(stem: &str) -> Option<Ver> {
+    let inner = stem.strip_prefix("교무수첩(")?.strip_suffix(')')?;
     let (a, rest) = inner.split_once('.')?;
     let mut cs = rest.chars();
     let b = cs.next()?.to_digit(10)?;
@@ -178,7 +196,7 @@ fn cleanup(programs: &Path, mine: Ver) {
     }
 }
 
-/// 이 파일과 같은 폴더에 있는 지난 버전 파일들
+/// 이 파일과 같은 폴더에 있는 지난 버전 파일들 (같은 버전이라도 예전 이름이면 넣는다)
 fn older_files_beside(me: &Path, mine: Ver) -> Vec<PathBuf> {
     let Some(dir) = me.parent() else { return vec![] };
     let Ok(rd) = std::fs::read_dir(dir) else { return vec![] };
@@ -186,7 +204,7 @@ fn older_files_beside(me: &Path, mine: Ver) -> Vec<PathBuf> {
         .flatten()
         .map(|e| e.path())
         .filter(|p| p.is_file() && p != me)
-        .filter(|p| p.file_name().and_then(|n| n.to_str()).and_then(file_ver).is_some_and(|v| v < mine))
+        .filter(|p| p.file_name().and_then(|n| n.to_str()).and_then(file_ver).is_some_and(|(v, legacy)| v < mine || (legacy && v == mine)))
         .collect();
     out.sort();
     out
@@ -328,7 +346,7 @@ fn main() {
         }
     };
     let mine = parse_ver(&m.version).unwrap_or((0, 0, 0));
-    let disp = display_ver(mine);
+    let me_name = file_name(mine);
     let programs = data_root().join("program");
     let dir = programs.join(&m.version);
 
@@ -336,8 +354,8 @@ fn main() {
     if let Some(newest) = newest_extracted(&programs).filter(|v| *v > mine) {
         let go = test_answer().unwrap_or_else(|| {
             ui::ask(&format!(
-                "이 파일은 지난 버전(교무수첩({disp}))입니다.\n이 PC에서는 이미 더 새로운 교무수첩({})을 쓰고 있습니다.\n\n새 버전 파일로 실행하는 것을 권합니다. 이 파일은 지워도 됩니다.\n\n그래도 이 지난 버전으로 실행할까요?",
-                display_ver(newest)
+                "이 파일은 지난 버전({me_name})입니다.\n이 PC에서는 이미 더 새로운 {}을 쓰고 있습니다.\n\n새 버전 파일로 실행하는 것을 권합니다. 이 파일은 지워도 됩니다.\n\n그래도 이 지난 버전으로 실행할까요?",
+                file_name(newest)
             ))
         });
         if !go {
@@ -380,7 +398,7 @@ fn main() {
                 let names: Vec<String> = old.iter().filter_map(|p| p.file_name().map(|n| format!("  {}", n.to_string_lossy()))).collect();
                 let yes = test_answer().unwrap_or_else(|| {
                     ui::ask(&format!(
-                        "새 버전 교무수첩({disp})을(를) 처음 켰습니다.\n같은 폴더에 지난 버전 파일이 있습니다:\n\n{}\n\n휴지통으로 옮길까요? (기록과 AI 모델은 그대로입니다. '아니요'를 누르면 그대로 둡니다)",
+                        "새 버전 {me_name}을 처음 켰습니다.\n같은 폴더에 지난 버전(또는 예전 이름) 파일이 있습니다:\n\n{}\n\n휴지통으로 옮길까요? (기록과 AI 모델은 그대로입니다. '아니요'를 누르면 그대로 둡니다)",
                         names.join("\n")
                     ))
                 });
@@ -431,25 +449,34 @@ mod tests {
         assert_eq!(display_ver((0, 6, 1)), "0.61");
         assert_eq!(display_ver((0, 6, 0)), "0.6");
         assert_eq!(display_ver((1, 0, 0)), "1.0");
-        assert_eq!(file_ver("교무수첩(0.61).exe"), Some((0, 6, 1)));
-        assert_eq!(file_ver("교무수첩(0.6).exe"), Some((0, 6, 0)));
-        assert_eq!(file_ver("교무수첩(1.12).exe"), Some((1, 1, 2)));
+        // 지금 이름
+        assert_eq!(file_name((1, 0, 0)), "교무수첩_1.0.0.exe");
+        assert_eq!(file_ver("교무수첩_1.0.0.exe"), Some(((1, 0, 0), false)));
+        assert_eq!(file_ver("교무수첩_1.0.12.EXE"), Some(((1, 0, 12), false)));
+        assert_eq!(file_ver("교무수첩_1.0.exe"), None);
+        assert_eq!(file_ver("교무수첩_1.0.0.1.exe"), None);
+        assert_eq!(file_ver("교무수첩_1.0.0 - 복사본.exe"), None);
+        // 1.0 까지의 예전 이름
+        assert_eq!(file_ver("교무수첩(0.61).exe"), Some(((0, 6, 1), true)));
+        assert_eq!(file_ver("교무수첩(0.6).exe"), Some(((0, 6, 0), true)));
+        assert_eq!(file_ver("교무수첩(1.12).exe"), Some(((1, 1, 2), true)));
         assert_eq!(file_ver("TeacherNotebook.exe"), None);
         assert_eq!(file_ver("교무수첩(0.6) - 복사본.exe"), None);
-        assert!(file_ver("교무수첩(0.6).exe").unwrap() < file_ver("교무수첩(0.61).exe").unwrap());
-        assert!(file_ver("교무수첩(0.61).exe").unwrap() < file_ver("교무수첩(0.7).exe").unwrap());
+        assert!(file_ver("교무수첩(0.6).exe").unwrap().0 < file_ver("교무수첩(0.61).exe").unwrap().0);
+        assert!(file_ver("교무수첩(0.9).exe").unwrap().0 < file_ver("교무수첩_1.0.0.exe").unwrap().0);
     }
 
     #[test]
     fn finds_only_older_version_files_beside() {
         let dir = std::env::temp_dir().join(format!("tn-launcher-test-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        for n in ["교무수첩(0.6).exe", "교무수첩(0.61).exe", "교무수첩(0.7).exe", "메모.txt", "TeacherNotebook.exe"] {
+        for n in ["교무수첩(0.9).exe", "교무수첩(1.0).exe", "교무수첩_0.9.0.exe", "교무수첩_1.0.0.exe", "교무수첩_1.1.0.exe", "메모.txt", "TeacherNotebook.exe"] {
             std::fs::write(dir.join(n), b"x").unwrap();
         }
-        let me = dir.join("교무수첩(0.61).exe");
-        let old = older_files_beside(&me, (0, 6, 1));
-        assert_eq!(old, vec![dir.join("교무수첩(0.6).exe")]);
+        let me = dir.join("교무수첩_1.0.0.exe");
+        let old = older_files_beside(&me, (1, 0, 0));
+        // 지난 버전(예전 이름·새 이름)과 같은 버전의 예전 이름 파일, 새 버전은 그대로
+        assert_eq!(old, vec![dir.join("교무수첩(0.9).exe"), dir.join("교무수첩(1.0).exe"), dir.join("교무수첩_0.9.0.exe")]);
         // 버전 폴더 정리는 더 오래된 것만
         let programs = dir.join("program");
         for v in ["0.6.0", "0.6.1", "0.7.0", ".0.6.1-123"] {

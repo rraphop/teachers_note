@@ -148,6 +148,44 @@ pub async fn delete_note(state: S<'_>, id: i64) -> AppResult<()> {
     Ok(())
 }
 
+// ───────────────────────── 기록 속 개인정보 → 학생 명렬표 ─────────────────────────
+
+/// "기존 → 새 값" 확인: accept=true 면 새 값으로 (보호자 연락처 4개가 찼으면 replace_id 를 바꾼다)
+#[tauri::command]
+pub async fn resolve_profile_change(state: S<'_>, id: i64, accept: bool, replace_id: Option<i64>) -> AppResult<()> {
+    state.db.with(|c| crate::profile::resolve_change(c, id, accept, replace_id, util::now()))?;
+    state.changed("students");
+    Ok(())
+}
+
+/// "이 내용을 어디에 둘까요?": choice = record(학생부 자료) | roster(학생 명렬표 특이사항)
+#[tauri::command]
+pub async fn answer_note_question(state: S<'_>, id: i64, choice: String) -> AppResult<()> {
+    state.db.with(|c| crate::profile::answer_question(c, id, &choice, util::now()))?;
+    state.changed("all");
+    Ok(())
+}
+
+/// 메뉴를 열었다 → 그 메뉴의 '새 항목' 숫자를 지우고, 이번 방문에 '새' 표시할 기준 시각(전에 본 시각)을 돌려준다
+#[tauri::command]
+pub async fn mark_seen(state: S<'_>, menu: String) -> AppResult<Option<String>> {
+    state.db.with(|c| crate::seen::mark_seen(c, &menu, util::now()))
+}
+
+/// 기준 시각 뒤에 AI 가 새로 넣은 항목 (학생부 자료 점 표시, 학생 명렬표 '새' 표시)
+#[tauri::command]
+pub async fn new_since(state: S<'_>, since: String) -> AppResult<crate::seen::NewSince> {
+    state.db.with(|c| crate::seen::new_since(c, &since))
+}
+
+/// 보호자 연락처 (최대 4개, 관계 + 번호)
+#[tauri::command]
+pub async fn set_student_contacts(state: S<'_>, student_id: i64, contacts: Vec<crate::profile::Contact>) -> AppResult<Vec<crate::profile::Contact>> {
+    let v = state.db.with(|c| crate::profile::set_contacts(c, student_id, &contacts, util::now()))?;
+    state.changed("students");
+    Ok(v)
+}
+
 /// 기록을 일반 기록 / 정리된 업무기록으로 옮긴다 (track: "general" | "work" | null = AI 분류를 따름)
 #[tauri::command]
 pub async fn set_note_track(state: S<'_>, id: i64, track: Option<String>) -> AppResult<()> {
@@ -246,6 +284,8 @@ pub struct StudentDetail {
     pub observations: Vec<ObservationDto>,
     pub notes: Vec<NoteDto>,
     pub drafts: Vec<DraftDto>,
+    /// 기록에서 들어온 학생 명렬표 변경 이력
+    pub profile_history: Vec<crate::profile::ProfileChange>,
 }
 
 #[tauri::command]
@@ -256,6 +296,7 @@ pub async fn get_student_detail(state: S<'_>, id: i64) -> AppResult<StudentDetai
             observations: records::student_observations(c, id)?,
             notes: notes::list_notes(c, &NoteFilter { student_id: Some(id), limit: Some(500), ..Default::default() })?,
             drafts: records::student_drafts(c, id)?,
+            profile_history: crate::profile::history(c, id)?,
         })
     })
 }
@@ -415,7 +456,8 @@ pub async fn record_ai_draft(state: S<'_>, student_id: i64, area: String, subjec
         }
         let cfg = app::require_model(&st)?;
         let area_v = Area::parse(&area);
-        let lines: Vec<String> = refs.iter().map(|o| crate::text::tidy(&o.content)).collect();
+        // 참고자료에 개인정보(전화번호·주소)가 섞여 있어도 AI 초안 문맥에는 가린 모양으로만 넣는다
+        let lines: Vec<String> = refs.iter().map(|o| crate::profile::scrub(&crate::text::tidy(&o.content))).collect();
         let out = st
             .runtime
             .chat(&cfg, llm::draft_body(area_v, &subject, &lines), app::infer_timeout(&cfg))

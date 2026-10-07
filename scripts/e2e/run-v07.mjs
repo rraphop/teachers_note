@@ -184,7 +184,7 @@ try {
   await app.evaluate(`document.querySelector('.update-log-btn').click()`);
   await waitFor(() => app.evaluate(`!!document.querySelector('.changelog')`), { label: "업데이트 기록" });
   const log = await app.text(".dialog");
-  check("업데이트 기록: v0.7", log.includes("v0.7") && log.includes("나이스 명렬표") && log.includes("정리된 업무기록"), "");
+  check("업데이트 기록: v1.0 기능 소개 (나이스 명렬표·정리된 업무기록)", log.includes("v1.0") && log.includes("나이스 명렬표") && log.includes("정리된 업무기록"), "");
 } catch (e) {
   check("E2E 실행", false, e instanceof Error ? e.stack ?? e.message : String(e));
 } finally {

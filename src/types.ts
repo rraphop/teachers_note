@@ -69,6 +69,10 @@ export interface Note {
   guard_notes: string[];
   unknown_names: string[];
   chips: Chip[];
+  /** 학생 명렬표에 넣은·확인을 기다리는 개인정보 */
+  profile: ProfileChange[];
+  /** "이 내용을 어디에 둘까요?" 질문 */
+  questions: NoteQuestion[];
   /** 교사가 직접 옮긴 갈래 (없으면 AI 분류를 따름) */
   track: NoteTrack | null;
   /** 정리된 업무기록인가 */
@@ -76,6 +80,56 @@ export interface Note {
 }
 
 export type NoteTrack = "general" | "work";
+
+/** 보호자 연락처 (관계 + 번호) */
+export interface Contact {
+  id: number;
+  relation: string;
+  phone: string;
+}
+
+/** 기록에서 찾아 학생 명렬표에 넣은(또는 확인을 기다리는) 개인정보 */
+export interface ProfileChange {
+  id: number;
+  note_id: number | null;
+  student_id: number;
+  student_label: string;
+  field: string;
+  field_label: string;
+  relation: string;
+  old_value: string;
+  new_value: string;
+  status: "applied" | "pending" | "rejected";
+  target_id: number | null;
+  contacts: Contact[];
+  source: string;
+  created_at: string;
+}
+
+/** 특이사항으로 보이는 내용: 어디에 둘지 */
+export interface NoteQuestion {
+  id: number;
+  note_id: number;
+  student_id: number | null;
+  student_label: string;
+  text: string;
+  area: string;
+  status: "pending" | "record" | "roster";
+}
+
+export interface ProfileItem {
+  field: string;
+  value: string;
+  relation: string;
+  student: PlanStudent;
+  text: string;
+}
+
+export interface SpecialItem {
+  text: string;
+  student: PlanStudent;
+  area: string;
+}
 
 export interface PlanStudent {
   student_id: number | null;
@@ -108,6 +162,10 @@ export interface Plan {
   items: PlanItem[];
   guard_notes: string[];
   unknown_names: string[];
+  /** 학생 명렬표에 넣을 개인정보 */
+  profile?: ProfileItem[];
+  /** 어디에 둘지 물을 특이사항 */
+  specials?: SpecialItem[];
 }
 
 export interface AiRun {
@@ -166,6 +224,8 @@ export interface Student {
   remark: string;
   /** 설정에서 켠 경우에만, 뒷자리를 가린 모양 */
   rrn: string;
+  /** 보호자 연락처 (최대 4개) */
+  contacts: Contact[];
 }
 
 export type RosterField =
@@ -362,6 +422,17 @@ export interface RecordTab {
   refs: Observation[];
   text: Draft | null;
   status: RecordStatus;
+  /** 출결 칸: 결석·지각·조퇴·결과를 사유별로 센 요약 */
+  attendance?: AttendanceRow[] | null;
+}
+
+/** 출결 요약 한 줄 (사유: 질병·미인정·기타·출석 인정) */
+export interface AttendanceRow {
+  kind: string;
+  sick: number;
+  unexcused: number;
+  other: number;
+  excused: number;
 }
 
 export type RecordStatus = "none" | "refs" | "draft" | "final";
@@ -383,6 +454,8 @@ export interface StudentDetail {
   observations: Observation[];
   notes: Note[];
   drafts: Draft[];
+  /** 기록에서 들어온 학생 명렬표 변경 이력 (최근 것부터) */
+  profile_history: ProfileChange[];
 }
 
 export interface ImportResult {
@@ -571,6 +644,10 @@ export interface TodayOverview {
   events_today: AgendaItem[];
   events_upcoming: AgendaItem[];
   unclassified_count: number;
+  /** 교사가 답해야 할 것 (특이사항 질문 + 개인정보 확인) */
+  needs_answer_count: number;
+  /** 메뉴별 새로 정리된 항목 */
+  new_counts: NewCounts;
   notes_today: number;
   reminder_log: ReminderLog[];
   birthdays_today: string[];
@@ -891,6 +968,8 @@ export interface ExportOptions {
   mask_contacts?: boolean;
   roster_columns?: RosterColumns | null;
   school_year?: number | null;
+  /** 명렬표: 이 학생들만 (학생 명렬표에서 찾은 결과) */
+  student_ids?: number[] | null;
 }
 
 export interface YearInfo {
@@ -990,4 +1069,24 @@ export interface TodayLayout {
   columns: TodayPanelId[][];
   wide: TodayPanelId[];
   hidden: TodayPanelId[];
+}
+
+/** 메뉴별 새로 정리된 항목 수 (AI 가 넣었고 그 메뉴를 마지막으로 본 뒤) */
+export interface NewCounts {
+  records: number;
+  duties: number;
+  tasks: number;
+  students: number;
+}
+
+export interface NewObservation {
+  student_id: number | null;
+  class_label: string | null;
+  area: string;
+  subject: string;
+}
+
+export interface NewSince {
+  observations: NewObservation[];
+  profile_students: number[];
 }

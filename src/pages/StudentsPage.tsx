@@ -1,10 +1,14 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api, errorText } from "../api";
 import { Empty, ErrorBox } from "../components/Fields";
 import { IconEdit, IconPlus, IconRecords, IconTrash } from "../components/Icons";
 import { confirmDialog, Modal } from "../components/Modal";
 import { DropOverlay, NEIS_ROSTER_TIP, NeisImportDialog, useExcelDrop } from "../components/NeisRosterImport";
+import { ProfileHistory } from "../components/ProfileParts";
 import { RosterTable } from "../components/RosterTable";
+import { maskText, useMaskContacts } from "../lib/privacy";
+import { useNewSince } from "../lib/seen";
+import { studentMatcher } from "../lib/studentSearch";
 import { fmtDate, fmtDateTime } from "../lib/format";
 import { AREA_ORDER, AREA_SHORT, areaLabel } from "../lib/labels";
 import { useLoad, useStore } from "../lib/store";
@@ -277,6 +281,7 @@ function StudentDetailView({ id, onBack, students }: { id: number; onBack: () =>
   const [edit, setEdit] = useState(false);
   const [areaFilter, setAreaFilter] = useState<string>("all");
   const [mergeInto, setMergeInto] = useState<string>("");
+  const masked = useMaskContacts();
   if (d.error) return <ErrorBox error={d.error} onRetry={d.reload} />;
   if (!d.data) return <p className="muted">불러오는 중…</p>;
   const s = d.data.student;
@@ -364,11 +369,12 @@ function StudentDetailView({ id, onBack, students }: { id: number; onBack: () =>
               <button className="link" onClick={() => navigate("notes", { noteId: n.id })}>
                 {fmtDateTime(n.created_at)}
               </button>{" "}
-              {n.summary ?? n.raw_text.slice(0, 80)}
+              {masked ? maskText(n.summary ?? n.raw_text.slice(0, 80)) : n.summary ?? n.raw_text.slice(0, 80)}
             </li>
           ))}
         </ul>
       </section>
+      <ProfileHistory list={d.data.profile_history ?? []} />
       {edit && <StudentForm initial={s} onClose={() => setEdit(false)} onSaved={d.reload} />}
     </div>
   );
@@ -401,8 +407,15 @@ export function StudentsPage() {
   const [neis, setNeis] = useState<{ paths: string[]; seq: number } | null>(null);
   const dragging = useExcelDrop((paths) => setNeis((cur) => ({ paths, seq: (cur?.seq ?? 0) + 1 })));
   const classes = useLoad(() => api.listClasses(), []);
-  const list = useLoad(() => api.listStudents(query || null, classId), [query, classId]);
+  const list = useLoad(() => api.listStudents(null, classId), [classId]);
+  // 이름·학급 찾기는 두 보기에서 같이 쓴다 (보기를 바꿔도 검색어 유지)
+  const matcher = useMemo(() => studentMatcher(query), [query]);
+  const shown = useMemo(() => (matcher ? (list.data ?? []).filter(matcher) : list.data ?? []), [list.data, matcher]);
   const all = useLoad(() => api.listStudents(null, null), []);
+  // 지난번에 본 뒤 기록에서 개인정보(연락처·주소 등)가 새로 들어간 학생: 이름 옆 점 (이번 방문 동안)
+  const since = useNewSince("students");
+  const freshLoad = useLoad(async () => (since ? api.newSince(since) : null), [since]);
+  const fresh = useMemo(() => new Set(freshLoad.data?.profile_students ?? []), [freshLoad.data]);
   useEffect(() => {
     if (params.studentId) setSelected(params.studentId);
   }, [params.studentId]);
@@ -424,6 +437,18 @@ export function StudentsPage() {
     <div className="page-head no-print">
       <h1>학생</h1>
       <div className="head-actions">
+        <input
+          className="search-input student-search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => {
+            // 찾은 학생이 한 명이면 Enter 로 바로 연다
+            if (e.key === "Enter" && matcher && shown.length === 1) setSelected(shown[0]!.id);
+            if (e.key === "Escape") setQuery("");
+          }}
+          placeholder="이름·학급 찾기 (예: 홍길동, 1-1, 1학년)"
+          aria-label="이름·학급 찾기"
+        />
         <div className="seg">
           <button className={view === "cards" ? "on" : ""} onClick={() => setView("cards")}>
             카드
@@ -432,7 +457,6 @@ export function StudentsPage() {
             학급명렬표
           </button>
         </div>
-        {view === "cards" && <input className="search-input" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="이름·학급 찾기" />}
         <button onClick={() => setImporting(true)}>명단 붙여넣기</button>
         <button onClick={() => setNeis({ paths: [], seq: 0 })} title={NEIS_ROSTER_TIP}>
           나이스 명렬표 가져오기
@@ -447,7 +471,7 @@ export function StudentsPage() {
     return (
       <div className="page">
         {head}
-        <RosterTable onOpen={(id) => setSelected(id)} />
+        <RosterTable onOpen={(id) => setSelected(id)} classId={classId} setClassId={setClassId} query={query} fresh={fresh} />
         {adding && <StudentForm initial={null} onClose={() => setAdding(false)} onSaved={bump} />}
         {importing && <ImportDialog onClose={() => setImporting(false)} onDone={bump} />}
         {neisParts}
@@ -459,7 +483,7 @@ export function StudentsPage() {
       {head}
       <div className="class-filter">
         <button className={classId === null ? "on" : ""} onClick={() => setClassId(null)}>
-          전체
+          전체 학급
         </button>
         {classes.data?.map((c) => (
           <button key={c.id} className={classId === c.id ? "on" : ""} onClick={() => setClassId(c.id)}>
@@ -468,19 +492,23 @@ export function StudentsPage() {
         ))}
       </div>
       {list.error && <ErrorBox error={list.error} onRetry={list.reload} />}
+      {matcher && list.data && list.data.length > 0 && shown.length === 0 && <p className="muted">‘{query}’에 맞는 학생이 없습니다.</p>}
       {list.data && list.data.length === 0 && (
         <Empty title="학생이 없습니다.">
           나이스에서 받은 명렬표 엑셀 파일을 가져오거나(이 화면에 끌어다 놓아도 됩니다), 명단을 붙여 넣으세요. 기록에 “2-1 홍길동”처럼 학급과 이름을 적어도 자동으로 등록됩니다.
         </Empty>
       )}
       <div className="student-grid">
-        {list.data?.map((s) => (
+        {shown.map((s) => (
           <button key={s.id} className={`student-card ${s.needs_review ? "review" : ""}`} onClick={() => setSelected(s.id)}>
             <div className="sc-top">
               <span className="sc-class">{s.class_label ?? "반 미지정"}{s.number ? ` · ${s.number}번` : ""}</span>
               {s.needs_review && <span className="tag warn">확인 필요</span>}
             </div>
-            <div className="sc-name">{s.name}</div>
+            <div className="sc-name">
+              {s.name}
+              {fresh.has(s.id) && <span className="new-dot" title="기록에서 개인정보가 새로 들어감" aria-label="새로 들어간 정보" />}
+            </div>
             <div className="sc-count">
               관찰 <b>{s.observation_count}</b> · 기록 <b>{s.note_count}</b>
             </div>

@@ -44,6 +44,10 @@ pub struct NoteDto {
     pub guard_notes: Vec<String>,
     pub unknown_names: Vec<String>,
     pub chips: Vec<Chip>,
+    /// 학생 명렬표에 넣은·확인을 기다리는 개인정보
+    pub profile: Vec<crate::profile::ProfileChange>,
+    /// "이 내용을 어디에 둘까요?" 질문
+    pub questions: Vec<crate::profile::NoteQuestion>,
     /// 교사가 직접 옮긴 갈래 ('general' | 'work'). 없으면 AI 분류를 따른다.
     pub track: Option<String>,
     /// 정리된 업무기록인가 (직접 옮겼거나, 할 일·일정·업무·학생 관찰·시간표가 나온 기록)
@@ -81,6 +85,8 @@ fn map_note(r: &rusqlite::Row) -> rusqlite::Result<NoteDto> {
         guard_notes: serde_json::from_str(&guard).unwrap_or_default(),
         unknown_names: serde_json::from_str(&unknown).unwrap_or_default(),
         chips: vec![],
+        profile: vec![],
+        questions: vec![],
         track: r.get(13)?,
         is_work: r.get::<_, i64>(14)? != 0,
     })
@@ -156,6 +162,7 @@ pub fn get_note(conn: &Connection, id: i64) -> AppResult<NoteDto> {
         .optional()?
         .ok_or_else(|| AppError::not_found("기록을 찾을 수 없습니다."))?;
     n.chips = chips(conn, id)?;
+    (n.profile, n.questions) = crate::profile::for_note(conn, id)?;
     Ok(n)
 }
 
@@ -164,6 +171,7 @@ pub fn query_notes(conn: &Connection, where_sql: &str, args: &[&dyn rusqlite::To
     let mut rows = st.query_map(args, map_note)?.collect::<Result<Vec<_>, _>>()?;
     for n in rows.iter_mut() {
         n.chips = chips(conn, n.id)?;
+        (n.profile, n.questions) = crate::profile::for_note(conn, n.id)?;
     }
     Ok(rows)
 }
@@ -471,6 +479,9 @@ pub fn apply_plan(conn: &mut Connection, note_id: i64, plan: &Plan, mode: ApplyM
         }
     }
 
+    // 기록 속 개인정보 → 학생 명렬표, 특이사항 → 질문 (학생부 자료·할 일로는 보내지 않는다)
+    crate::profile::apply(&tx, note_id, &plan.profile, &plan.specials, source_of(ItemOrigin::Rule, &mode), created, now, &mut unresolved)?;
+
     for (k, id) in new_targets {
         reminders::rebuild(&tx, k, id, now)?;
     }
@@ -658,11 +669,33 @@ pub fn current_plan(conn: &Connection, note_id: i64) -> AppResult<Plan> {
             memo: None,
         });
     }
+    // 명렬표에 넣은(또는 확인을 기다리는) 개인정보와 특이사항 질문도 계획으로 되돌린다
+    let (changes, questions) = crate::profile::for_note(conn, note_id)?;
+    let ps = |sid: i64| -> PlanStudent {
+        let s = crate::students::get_student(conn, sid).ok();
+        PlanStudent {
+            student_id: Some(sid),
+            name: s.as_ref().map(|s| s.name.clone()).unwrap_or_default(),
+            class_label: s.as_ref().and_then(|s| s.class_label.clone()),
+            number: s.as_ref().and_then(|s| s.number),
+            candidates: vec![],
+        }
+    };
+    let profile = changes
+        .iter()
+        .map(|c| crate::profile::ProfileItem { field: c.field.clone(), value: c.new_value.clone(), relation: c.relation.clone(), student: ps(c.student_id), text: String::new() })
+        .collect();
+    let specials = questions
+        .iter()
+        .filter_map(|q| q.student_id.map(|sid| crate::profile::SpecialItem { text: q.text.clone(), student: ps(sid), area: q.area.clone() }))
+        .collect();
     Ok(Plan {
         summary: note.summary.unwrap_or_default(),
         items,
         guard_notes: note.guard_notes,
         unknown_names: note.unknown_names,
+        profile,
+        specials,
     })
 }
 
@@ -786,6 +819,90 @@ mod tests {
         assert_eq!(subject.len(), 1, "같은 학생·같은 영역은 한 번만: {rows:?}");
         assert!(subject[0].1.contains("잠") && subject[0].1.contains("휴대폰"), "{rows:?}");
         assert_eq!(rows.iter().filter(|(a, _)| a == "behavior").count(), 1, "다른 영역은 따로: {rows:?}");
+    }
+    #[test]
+    fn personal_info_goes_to_roster_not_records() {
+        let db = Db::open_in_memory().unwrap();
+        let mut c = db.lock();
+        let sid = crate::students::create_student(&c, &crate::students::StudentInput { name: "홍길동".into(), class_label: Some("1-1".into()), number: Some(1), memo: None }, now()).unwrap();
+        let roster = crate::students::roster(&c).unwrap();
+        let ctx = Ctx { today: now().date(), roster: &roster, duties: &[] };
+        let run = |c: &mut Connection, raw: &str| -> i64 {
+            let id = create_note(c, raw, now()).unwrap();
+            let plan = classify::rule_plan(raw, &ctx);
+            apply_plan(c, id, &plan, ApplyMode::Manual, now(), &spec()).unwrap();
+            id
+        };
+        // 주소·전화번호·보호자 연락처·생일은 명렬표로, 학생부 자료·할 일로는 가지 않는다
+        let n1 = run(&mut c, "홍길동 주소 OO시 OO구 OO로 12");
+        let n2 = run(&mut c, "홍길동 전화번호 010-1234-5678");
+        run(&mut c, "홍길동 어머니 연락처 010-9876-5432");
+        run(&mut c, "홍길동 생일 3월 5일");
+        let s = crate::students::get_student(&c, sid).unwrap();
+        assert_eq!((s.address.as_str(), s.phone.as_str(), s.birthday.as_deref()), ("OO시 OO구 OO로 12", "010-1234-5678", Some("03-05")));
+        assert_eq!(s.contacts.iter().map(|x| (x.relation.as_str(), x.phone.as_str())).collect::<Vec<_>>(), vec![("모", "010-9876-5432")]);
+        assert_eq!(s.guardian_phone, "010-9876-5432", "예전 칸은 첫 연락처로 맞춘다");
+        let obs: i64 = c.query_row("SELECT COUNT(*) FROM observations", [], |r| r.get(0)).unwrap();
+        let tasks: i64 = c.query_row("SELECT COUNT(*) FROM tasks", [], |r| r.get(0)).unwrap();
+        assert_eq!((obs, tasks), (0, 0), "개인정보는 학생부 자료·할 일로 보내지 않는다");
+        let note = get_note(&c, n1).unwrap();
+        assert_eq!(note.profile.iter().map(|p| (p.field_label.as_str(), p.status.as_str())).collect::<Vec<_>>(), vec![("주소", "applied")]);
+        // 이미 값이 있으면 덮어쓰지 않고 확인을 기다린다 → 받아들이면 바뀌고 이력이 남는다
+        let n5 = run(&mut c, "홍길동 주소 OO시 OO구 새길 34");
+        assert_eq!(crate::students::get_student(&c, sid).unwrap().address, "OO시 OO구 OO로 12");
+        let pending = get_note(&c, n5).unwrap().profile;
+        assert_eq!((pending[0].status.as_str(), pending[0].old_value.as_str(), pending[0].new_value.as_str()), ("pending", "OO시 OO구 OO로 12", "OO시 OO구 새길 34"));
+        assert_eq!(crate::profile::pending_count(&c).unwrap(), 1);
+        crate::profile::resolve_change(&c, pending[0].id, true, None, now()).unwrap();
+        assert_eq!(crate::students::get_student(&c, sid).unwrap().address, "OO시 OO구 새길 34");
+        assert_eq!(crate::profile::pending_count(&c).unwrap(), 0);
+        // 같은 관계의 새 번호는 추가하지 않고 확인, 다른 관계는 4개까지 추가
+        run(&mut c, "홍길동 아버지 010-1111-1111");
+        run(&mut c, "홍길동 할머니 010-2222-2222");
+        run(&mut c, "홍길동 삼촌 010-3333-3333");
+        assert_eq!(crate::profile::contacts(&c, sid).unwrap().len(), 4);
+        let n9 = run(&mut c, "홍길동 이모 010-4444-4444");
+        let full = get_note(&c, n9).unwrap().profile;
+        assert!(full[0].status == "pending" && full[0].target_id.is_none() && full[0].contacts.len() == 4, "4개가 찼으면 바꿀 것을 묻는다");
+        let replace = full[0].contacts[3].id;
+        crate::profile::resolve_change(&c, full[0].id, true, Some(replace), now()).unwrap();
+        let list = crate::profile::contacts(&c, sid).unwrap();
+        assert_eq!(list.iter().map(|x| x.relation.as_str()).collect::<Vec<_>>(), vec!["모", "부", "조모", "이모"]);
+        let n10 = run(&mut c, "홍길동 어머니 010-5555-5555");
+        let same = get_note(&c, n10).unwrap().profile;
+        assert_eq!((same[0].status.as_str(), same[0].old_value.as_str()), ("pending", "010-9876-5432"), "같은 관계는 기존 → 새 값 확인");
+        // 그 사이 다른 확인으로 연락처를 바꿔도(연락처 id 유지) 기다리던 '모' 확인은 그대로 된다
+        let n11 = run(&mut c, "홍길동 고모 010-6666-6666");
+        let full2 = get_note(&c, n11).unwrap().profile;
+        let ids_before: Vec<i64> = crate::profile::contacts(&c, sid).unwrap().iter().map(|x| x.id).collect();
+        crate::profile::resolve_change(&c, full2[0].id, true, Some(full2[0].contacts[1].id), now()).unwrap();
+        let ids_after: Vec<i64> = crate::profile::contacts(&c, sid).unwrap().iter().map(|x| x.id).collect();
+        assert_eq!(ids_after, ids_before, "연락처를 바꿔도 id 는 그대로");
+        crate::profile::resolve_change(&c, same[0].id, true, None, now()).unwrap();
+        let list = crate::profile::contacts(&c, sid).unwrap();
+        assert_eq!(
+            list.iter().map(|x| (x.relation.as_str(), x.phone.as_str())).collect::<Vec<_>>(),
+            vec![("모", "010-5555-5555"), ("고모", "010-6666-6666"), ("조모", "010-2222-2222"), ("이모", "010-4444-4444")]
+        );
+        let hist = crate::profile::history(&c, sid).unwrap();
+        assert!(hist.len() >= 10 && hist[0].id > hist[1].id, "학생별 변경 이력은 최근 것부터");
+        // 같은 기록을 다시 분류해도 두 번 넣지 않는다
+        let again = classify::rule_plan("홍길동 전화번호 010-1234-5678", &ctx);
+        apply_plan(&mut c, n2, &again, ApplyMode::Manual, now(), &spec()).unwrap();
+        let applied: i64 = c.query_row("SELECT COUNT(*) FROM profile_changes WHERE note_id=?1 AND status='applied'", params![n2], |r| r.get(0)).unwrap();
+        assert_eq!(applied, 1);
+        // 특이사항으로 보이는 내용은 묻고, 답에 따라 학생부 자료 또는 명렬표 특이사항으로
+        let q1 = run(&mut c, "홍길동 수업 중 자주 어지러움 호소");
+        let qs = get_note(&c, q1).unwrap().questions;
+        assert_eq!((qs.len(), qs[0].status.as_str()), (1, "pending"));
+        let obs: i64 = c.query_row("SELECT COUNT(*) FROM observations WHERE note_id=?1", params![q1], |r| r.get(0)).unwrap();
+        assert_eq!(obs, 0, "답하기 전에는 학생부 자료로 보내지 않는다");
+        crate::profile::answer_question(&c, qs[0].id, "roster", now()).unwrap();
+        assert!(crate::students::get_student(&c, sid).unwrap().memo.contains("어지러움"));
+        crate::profile::answer_question(&c, qs[0].id, "record", now()).unwrap();
+        assert!(!crate::students::get_student(&c, sid).unwrap().memo.contains("어지러움"), "나중에 바꾸면 명렬표에서는 빠진다");
+        let obs: i64 = c.query_row("SELECT COUNT(*) FROM observations WHERE note_id=?1", params![q1], |r| r.get(0)).unwrap();
+        assert_eq!(obs, 1);
     }
     #[test]
     fn group_observation_without_student_is_kept() {

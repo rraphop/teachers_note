@@ -14,7 +14,7 @@ pub fn autostart_command(exe: &std::path::Path) -> String {
     format!("\"{}\"", exe.display())
 }
 
-/// 시작 프로그램에 적힌 명령에서 실행 파일 경로만 꺼낸다 (`"C:\…\교무수첩(0.9).exe" --background` → `C:\…\교무수첩(0.9).exe`)
+/// 시작 프로그램에 적힌 명령에서 실행 파일 경로만 꺼낸다 (`"C:\…\교무수첩_1.0.0.exe" --background` → `C:\…\교무수첩_1.0.0.exe`)
 pub fn autostart_exe(cmd: &str) -> String {
     let t = cmd.trim();
     match t.strip_prefix('"').and_then(|r| r.split_once('"')) {
@@ -201,12 +201,12 @@ mod tests {
 
     #[test]
     fn autostart_command_shows_window_and_reads_old_form() {
-        let exe = std::path::Path::new(r"C:\Users\teacher\Desktop\교무수첩(0.9).exe");
+        let exe = std::path::Path::new(r"C:\Users\teacher\Desktop\교무수첩_1.0.0.exe");
         // 새 모양: 경로만 (창을 띄운 채로 켠다)
-        assert_eq!(super::autostart_command(exe), r#""C:\Users\teacher\Desktop\교무수첩(0.9).exe""#);
+        assert_eq!(super::autostart_command(exe), r#""C:\Users\teacher\Desktop\교무수첩_1.0.0.exe""#);
         assert_eq!(super::autostart_exe(&super::autostart_command(exe)), exe.display().to_string());
         // 예전 모양(알림 영역에만 켜기)도 경로를 읽는다
-        assert_eq!(super::autostart_exe(r#""C:\a b\교무수첩(0.8).exe" --background"#), r"C:\a b\교무수첩(0.8).exe");
+        assert_eq!(super::autostart_exe(r#""C:\a b\교무수첩_0.9.0.exe" --background"#), r"C:\a b\교무수첩_0.9.0.exe");
         assert_eq!(super::autostart_exe(r"C:\a\TeacherNotebook.exe --background"), r"C:\a\TeacherNotebook.exe");
     }
 }

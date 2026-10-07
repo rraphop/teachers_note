@@ -530,7 +530,9 @@ pub fn student_data(conn: &Connection, y: i32, opts: &ArchiveOptions, now: Naive
     let mut student_total = 0;
     for (cid, label) in &classes {
         let mut st = conn.prepare(
-            "SELECT number, name, phone, guardian_phone, address, gender, COALESCE(birthday, ''), memo,
+            "SELECT number, name, phone,
+                    COALESCE((SELECT GROUP_CONCAT(TRIM(relation || ' ' || phone), ', ') FROM (SELECT relation, phone FROM student_contacts sc WHERE sc.student_id = s.id ORDER BY pos, id)), guardian_phone),
+                    address, gender, COALESCE(birthday, ''), memo,
                     (SELECT COUNT(*) FROM observations o WHERE o.student_id = s.id AND o.observed_on >= ?2 AND o.observed_on < ?3)
              FROM students s WHERE class_id = ?1 ORDER BY number IS NULL, number, name",
         )?;
@@ -850,6 +852,7 @@ fn build_files(conn: &Connection, opts: &ArchiveOptions, folder: &Path, now: Nai
             mask_contacts: false,
             roster_columns: None,
             school_year: Some(y),
+            student_ids: None,
         };
         let tables = export::build(conn, &eo)?;
         let p = folder.join(format!("3. 엑셀 원본 ({y}학년도).xlsx"));

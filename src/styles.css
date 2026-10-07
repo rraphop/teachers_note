@@ -942,7 +942,7 @@ label.inline {
 /* 넓은 화면에서는 카드를 여러 줄로 (한 장이 560px 안팎) */
 .note-list {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 560px), 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 560px), 1fr));
   gap: 12px;
   align-items: start;
 }
@@ -1794,7 +1794,7 @@ mark {
   margin: 0;
   padding: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 560px), 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 560px), 1fr));
   column-gap: 28px;
 }
 .result-list li {
@@ -3334,12 +3334,360 @@ i.swatch {
 .settings-col {
   min-width: 0;
 }
+/* 할 일 묶음: 기본은 본문 폭을 다 채운 1열(긴 제목도 한 줄), 아주 넓은 화면(칸마다 900px 이상)에서만 2~3열 */
 .bucket-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 560px), 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 900px), 1fr));
   gap: 14px;
   align-items: start;
 }
 .bucket-grid > .panel {
   margin-bottom: 0;
+}
+
+/* 업데이트 기록: 첫 출시 소개·새 기능·고친 점 */
+.cl-summary {
+  margin: 6px 0 8px;
+  line-height: 1.6;
+}
+.cl-sections li {
+  margin: 4px 0;
+  line-height: 1.6;
+}
+.cl-kind {
+  margin: 10px 0 4px;
+  font-size: 0.9rem;
+}
+
+/* 학생 명렬표: 학급·번호·이름은 고정 폭으로 왼쪽에 붙박고, 선택 칸은 비율대로 */
+.roster-table {
+  table-layout: fixed;
+}
+.roster-table th.pin,
+.roster-table tbody tr:not(.add-row) > td:nth-child(-n + 3) {
+  position: sticky;
+  z-index: 1;
+  background: var(--panel);
+}
+.roster-table th.pin {
+  background: #f6f4ee;
+  z-index: 2;
+}
+.roster-table .pin-1,
+.roster-table tbody tr:not(.add-row) > td:nth-child(1) {
+  left: 0;
+}
+.roster-table .pin-2,
+.roster-table tbody tr:not(.add-row) > td:nth-child(2) {
+  left: 64px;
+}
+.roster-table .pin-3,
+.roster-table tbody tr:not(.add-row) > td:nth-child(3) {
+  left: 116px;
+  box-shadow: 1px 0 0 var(--line);
+}
+.roster-table tr.review > td:nth-child(3) {
+  background: var(--warn-soft);
+}
+.roster-table .roster-cell {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.roster-table .roster-cell.wide {
+  min-width: 0;
+}
+.roster-table mark {
+  background: #fde68a;
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+.search-scope {
+  font-weight: 400;
+  opacity: 0.85;
+}
+.student-search {
+  min-width: 240px;
+}
+@media print {
+  .roster-table {
+    width: 100% !important;
+    table-layout: auto;
+  }
+  .roster-table col {
+    width: auto !important;
+  }
+  .roster-table th.pin,
+  .roster-table td {
+    position: static !important;
+  }
+}
+
+/* 학생부 자료: 학급 펼침 목록 */
+.student-pick .pick-class {
+  width: 100%;
+  justify-content: flex-start;
+  gap: 6px;
+  border: none;
+  background: none;
+  padding: 6px 4px;
+  font-weight: 700;
+  border-bottom: 1px solid var(--line-2);
+  border-radius: 6px;
+}
+.student-pick .pick-class:hover {
+  background: var(--line-2);
+}
+.student-pick .pick-class small {
+  margin-left: auto;
+  font-weight: 400;
+}
+.pick-caret {
+  width: 12px;
+  color: var(--muted);
+}
+.pick-group + .pick-group {
+  margin-top: 2px;
+}
+.pick-group.open ul {
+  margin: 2px 0 6px;
+}
+
+/* 출결 요약 표 */
+.att-table {
+  border-collapse: collapse;
+  margin: 6px 0;
+  font-size: 0.92rem;
+}
+.att-table th,
+.att-table td {
+  border: 1px solid var(--line);
+  padding: 4px 12px;
+  text-align: center;
+  min-width: 64px;
+}
+.att-table thead th {
+  background: #f6f4ee;
+  font-size: 0.84rem;
+}
+.att-table tbody th {
+  background: #fbfaf6;
+}
+.att-table tr.zero td,
+.att-table tr.zero th {
+  color: var(--muted);
+}
+
+/* 기록 속 개인정보 → 학생 명렬표 */
+.chip.profile {
+  background: #eef2ff;
+  color: #3730a3;
+  border-color: #c7d2fe;
+}
+.chip.profile small {
+  opacity: 0.8;
+}
+.profile-questions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 8px 0 4px;
+}
+.profile-confirm {
+  border: 1px solid #f5d48a;
+  background: var(--warn-soft);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+.profile-confirm.question {
+  border-color: #c7d2fe;
+  background: #f5f7ff;
+}
+.profile-confirm p {
+  margin: 4px 0 6px;
+}
+.profile-confirm .old {
+  text-decoration: line-through;
+  color: var(--muted);
+}
+.contact-pick {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 6px;
+}
+.contacts-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.contacts-edit .rel {
+  width: 130px;
+}
+.contacts-cell .more-count {
+  color: var(--primary);
+  font-weight: 700;
+}
+.plan-profile {
+  border: 1px dashed #c7d2fe;
+  border-radius: 8px;
+  padding: 6px 10px;
+  margin: 8px 0;
+}
+.plan-profile h4 {
+  margin: 2px 0 4px;
+  font-size: 0.9rem;
+}
+.plan-profile ul {
+  margin: 0;
+  padding-left: 18px;
+}
+.plan-profile li {
+  margin: 3px 0;
+}
+.plan-profile li button {
+  margin-left: 8px;
+  min-height: 24px;
+  padding: 0 8px;
+}
+.print-only {
+  display: none;
+}
+@media print {
+  .print-only {
+    display: table-cell;
+  }
+  .roster-table .contacts-cell,
+  .roster-table .contacts-head {
+    display: none;
+  }
+}
+
+/* 입력창 'AI 정리 중' 원형 게이지 */
+.ai-ring {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  align-self: center;
+}
+.ai-ring-btn {
+  border: none;
+  background: none;
+  padding: 0;
+  min-height: 0;
+  border-radius: 50%;
+}
+.ai-ring-btn:hover:not(:disabled) {
+  background: var(--line-2);
+}
+.ai-ring .ring-bg {
+  fill: none;
+  stroke: var(--line);
+  stroke-width: 3.5;
+}
+.ai-ring .ring-fg {
+  fill: none;
+  stroke: var(--primary);
+  stroke-width: 3.5;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.35s ease;
+}
+.ai-ring .ring-text {
+  font-size: 10.5px;
+  font-weight: 700;
+  fill: var(--ink-2);
+}
+.ai-ring.starting .ring-fg {
+  stroke: var(--accent);
+  animation: ring-spin 1.2s linear infinite;
+  transform-origin: 19px 19px;
+}
+@keyframes ring-spin {
+  from {
+    transform: rotate(-90deg);
+  }
+  to {
+    transform: rotate(270deg);
+  }
+}
+.ai-ring.done .ring-fg {
+  stroke: var(--ok);
+}
+.ai-ring.failed .ring-fg {
+  stroke: var(--danger);
+}
+.ai-ring.failed .ring-text {
+  fill: var(--danger);
+}
+.ai-ring-label {
+  font-size: 0.78rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.ai-ring.failed .ai-ring-label {
+  color: var(--danger);
+  font-weight: 600;
+}
+.ai-ring-menu {
+  position: absolute;
+  bottom: 46px;
+  right: 0;
+  display: flex;
+  gap: 6px;
+  padding: 8px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  z-index: 30;
+  white-space: nowrap;
+}
+
+/* 메뉴 숫자: 기록(정리 중·확인 필요)은 회색, 새로 정리된 항목은 초록 동그라미 */
+.nav-badge.pending {
+  background: #8a9490;
+}
+.nav-badge.new {
+  background: #1f9d55;
+  border-radius: 999px;
+  box-shadow: 0 0 0 2px #e6f6ec;
+}
+.new-tag {
+  display: inline-block;
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: #fff;
+  background: #1f9d55;
+  border-radius: 999px;
+  padding: 0 6px;
+  margin-right: 5px;
+  vertical-align: 1px;
+}
+.new-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #1f9d55;
+  margin-left: 4px;
+  vertical-align: middle;
+}
+
+/* 학생 상세: 명렬표 변경 이력 */
+.profile-history li {
+  line-height: 1.7;
+}
+.profile-history .old {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+.profile-history .ph-rejected b {
+  color: var(--muted);
+  font-weight: 500;
+}
+.profile-history .link {
+  margin-left: 6px;
 }

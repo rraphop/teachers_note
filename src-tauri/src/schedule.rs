@@ -637,6 +637,10 @@ pub struct TodayOverview {
     pub events_today: Vec<AgendaItem>,
     pub events_upcoming: Vec<AgendaItem>,
     pub unclassified_count: i64,
+    /// 교사가 답해야 할 것: 특이사항 "어디에 둘까요?" + 개인정보 "기존 → 새 값" 확인
+    pub needs_answer_count: i64,
+    /// 메뉴별 새로 정리된 항목 (학생부 자료·교무 업무·할 일·학생 명렬표)
+    pub new_counts: crate::seen::NewCounts,
     pub notes_today: i64,
     pub reminder_log: Vec<reminders::ReminderLog>,
     /// 오늘 생일인 학생 (설정에서 켰을 때)
@@ -713,6 +717,8 @@ pub fn today_overview(conn: &Connection, today: NaiveDate, now: NaiveDateTime, i
         events_today,
         events_upcoming,
         unclassified_count,
+        needs_answer_count: crate::profile::pending_count(conn)?,
+        new_counts: crate::seen::counts(conn, now)?,
         notes_today,
         reminder_log,
         birthdays_today,

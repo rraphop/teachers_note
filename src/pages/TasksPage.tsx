@@ -5,6 +5,7 @@ import { openEditor } from "../components/Editors";
 import { Empty, ErrorBox } from "../components/Fields";
 import { IconPlus } from "../components/Icons";
 import { addDays, isoDate, startOfWeek, todayISO } from "../lib/format";
+import { isNewItem, useNewSince } from "../lib/seen";
 import { useLoad } from "../lib/store";
 import type { AgendaItem, Task } from "../types";
 
@@ -35,6 +36,7 @@ function toAgenda(t: Task): AgendaItem {
 export function TasksPage() {
   const [tab, setTab] = useState<"open" | "done">("open");
   const tasks = useLoad(() => api.listTasks(tab), [tab]);
+  const since = useNewSince("tasks");
   const today = todayISO();
   const weekEnd = isoDate(addDays(startOfWeek(new Date()), 6));
 
@@ -81,7 +83,7 @@ export function TasksPage() {
                 <h2>
                   {label} <span className={`count ${label === "기한 지남" ? "danger" : ""}`}>{g.length}</span>
                 </h2>
-                <ul className="agenda">{g.map((t) => <AgendaRow key={t.id} item={toAgenda(t)} />)}</ul>
+                <ul className="agenda">{g.map((t) => <AgendaRow key={t.id} item={toAgenda(t)} isNew={isNewItem(t, since)} />)}</ul>
               </section>
             ))}
         </div>

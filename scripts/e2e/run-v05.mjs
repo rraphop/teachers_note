@@ -129,7 +129,7 @@ try {
   await app.evaluate(`document.querySelector('.update-log-btn').click()`);
   await waitFor(() => app.evaluate(`!!document.querySelector('.changelog')`), { label: "업데이트 기록" });
   const log = await app.text(".dialog");
-  check("업데이트 기록: v0.5", log.includes("v0.5") && log.includes("시간표") && log.includes("오늘의 기록"), "");
+  check("업데이트 기록: v1.0 기능 소개 (시간표·오늘의 기록)", log.includes("v1.0") && log.includes("시간표") && log.includes("오늘의 기록"), "");
 } catch (e) {
   check("E2E 실행", false, e instanceof Error ? e.stack ?? e.message : String(e));
 } finally {

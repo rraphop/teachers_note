@@ -9,6 +9,15 @@ import { IconPlus, IconTrash } from "./Icons";
 import { confirmDialog, Modal } from "./Modal";
 
 const KINDS: ItemKind[] = ["student", "task", "event", "duty"];
+const PROFILE_LABEL: Record<string, string> = {
+  phone: "전화번호",
+  guardian: "보호자 연락처",
+  address: "주소",
+  gender: "성별",
+  birthday: "생일",
+  student_no: "학생개인번호",
+  prev_record: "이전학적",
+};
 
 function blankItem(kind: ItemKind): PlanItem {
   return {
@@ -220,7 +229,7 @@ export function ClassifyEditor({ noteId, manual, onClose }: { noteId: number; ma
         setRoster(r);
         setDuties(du.filter((x) => x.active));
         setDefRemind(s.remind_default);
-        if (d.plan.items.length === 0) {
+        if (d.plan.items.length === 0 && (d.plan.profile?.length ?? 0) === 0 && (d.plan.specials?.length ?? 0) === 0) {
           const sug = await api.suggestPlan(noteId);
           if (!alive) return;
           setPlan({ ...sug, summary: d.plan.summary || sug.summary });
@@ -301,6 +310,38 @@ export function ClassifyEditor({ noteId, manual, onClose }: { noteId: number; ma
             <span>요약</span>
             <input value={plan.summary} onChange={(e) => setPlan({ ...plan, summary: e.target.value })} placeholder="한 줄 요약" />
           </label>
+          {(plan.profile?.length ?? 0) > 0 && (
+            <div className="plan-profile">
+              <h4>학생 명렬표에 넣을 정보 (학생부 자료·할 일로 보내지 않음)</h4>
+              <ul>
+                {plan.profile!.map((p, i) => (
+                  <li key={i}>
+                    <b>{p.student.class_label ?? ""} {p.student.name}</b> · {PROFILE_LABEL[p.field] ?? p.field}
+                    {p.relation ? ` (${p.relation})` : ""}: {p.value}
+                    <button className="ghost danger" onClick={() => setPlan({ ...plan, profile: plan.profile!.filter((_, j) => j !== i) })} aria-label="이 정보 빼기">
+                      빼기
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              <p className="small muted">이미 값이 있으면 바로 바꾸지 않고 기록 카드에서 ‘기존 → 새 값’을 확인합니다.</p>
+            </div>
+          )}
+          {(plan.specials?.length ?? 0) > 0 && (
+            <div className="plan-profile">
+              <h4>어디에 둘지 물어볼 내용 (특이사항)</h4>
+              <ul>
+                {plan.specials!.map((sp, i) => (
+                  <li key={i}>
+                    <b>{sp.student.class_label ?? ""} {sp.student.name}</b> · “{sp.text}”
+                    <button className="ghost danger" onClick={() => setPlan({ ...plan, specials: plan.specials!.filter((_, j) => j !== i) })} aria-label="이 질문 빼기">
+                      빼기
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           <div className="plan-items">
             {plan.items.length === 0 && <p className="muted">정리할 항목이 없습니다. 아래 버튼으로 추가하거나 요약만 저장해도 됩니다.</p>}
             {plan.items.map((it, i) => (

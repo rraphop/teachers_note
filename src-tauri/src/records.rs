@@ -399,6 +399,76 @@ pub struct RecordTab {
     pub text: Option<DraftDto>,
     /// none 자료 없음 | refs 참고자료만 | draft 초안 | final 최종안
     pub status: String,
+    /// 출결 칸: 결석·지각·조퇴·결과를 사유별로 센 요약 (빼지 않은 참고자료 기준)
+    pub attendance: Option<Vec<AttendanceRow>>,
+}
+
+// ───────────────────────── 출결 요약 ─────────────────────────
+
+/// 출결 종류 (학생부 출결상황 순서)
+pub const ATTENDANCE_KINDS: [&str; 4] = ["결석", "지각", "조퇴", "결과"];
+
+/// 출결 요약 한 줄: 종류별로 사유(질병·미인정·기타·출석 인정)마다 센 수
+#[derive(Debug, Clone, Serialize, PartialEq, Default)]
+pub struct AttendanceRow {
+    pub kind: String,
+    pub sick: u32,
+    pub unexcused: u32,
+    pub other: u32,
+    pub excused: u32,
+}
+
+const SICK_WORDS: [&str; 18] = [
+    "질병", "병원", "아파", "아픔", "아프", "감기", "독감", "발열", "열이", "몸살", "두통", "복통", "장염", "코로나", "진료", "입원", "수술", "몸이 안 좋",
+];
+const UNEXCUSED_WORDS: [&str; 5] = ["미인정", "무단", "연락 없이", "연락없이", "무단으로"];
+const EXCUSED_WORDS: [&str; 8] = ["출석인정", "출석 인정", "인정결석", "인정 결석", "체험학습", "경조사", "공결", "대회 참가"];
+
+/// 출결 기록 한 건 → (종류, 사유, 횟수). 사유: sick | unexcused | other | excused.
+/// 결석은 "3일"처럼 날 수가 있으면 그만큼, 나머지는 "2회"·"2번"이 있으면 그만큼 센다.
+pub fn attendance_fact(text: &str) -> Option<(&'static str, &'static str, u32)> {
+    let t = text.replace(char::is_whitespace, " ");
+    let kind = if t.contains("결석") {
+        "결석"
+    } else if t.contains("조퇴") {
+        "조퇴"
+    } else if t.contains("지각") {
+        "지각"
+    } else if t.contains("결과") {
+        "결과"
+    } else {
+        return None;
+    };
+    let reason = if EXCUSED_WORDS.iter().any(|w| t.contains(w)) {
+        "excused"
+    } else if UNEXCUSED_WORDS.iter().any(|w| t.contains(w)) {
+        "unexcused"
+    } else if SICK_WORDS.iter().any(|w| t.contains(w)) {
+        "sick"
+    } else {
+        "other"
+    };
+    static DAYS: once_cell::sync::Lazy<regex::Regex> = once_cell::sync::Lazy::new(|| regex::Regex::new(r"(\d{1,2})\s*일\s*(간|동안)?\s*(결석|동안|간)").expect("정규식"));
+    static TIMES: once_cell::sync::Lazy<regex::Regex> = once_cell::sync::Lazy::new(|| regex::Regex::new(r"(\d{1,2})\s*(회|번)").expect("정규식"));
+    let n = if kind == "결석" { DAYS.captures(&t).and_then(|c| c[1].parse().ok()) } else { TIMES.captures(&t).and_then(|c| c[1].parse().ok()) };
+    Some((kind, reason, n.filter(|n: &u32| (1..=60).contains(n)).unwrap_or(1)))
+}
+
+/// 출결 참고자료(뺀 것 제외)를 종류·사유별로 센다. 네 종류 모두 줄을 만든다(0 포함).
+pub fn attendance_summary(refs: &[ObservationDto]) -> Vec<AttendanceRow> {
+    let mut rows: Vec<AttendanceRow> = ATTENDANCE_KINDS.iter().map(|k| AttendanceRow { kind: k.to_string(), ..Default::default() }).collect();
+    for o in refs.iter().filter(|o| !o.excluded) {
+        if let Some((kind, reason, n)) = attendance_fact(&o.content) {
+            let row = rows.iter_mut().find(|r| r.kind == kind).expect("종류");
+            match reason {
+                "sick" => row.sick += n,
+                "unexcused" => row.unexcused += n,
+                "excused" => row.excused += n,
+                _ => row.other += n,
+            }
+        }
+    }
+    rows
 }
 
 fn status_of(refs: usize, text: Option<bool>) -> &'static str {
@@ -428,7 +498,7 @@ fn subjects_for(area: Area, my_subjects: &[String], obs: &[ObservationDto], draf
     v
 }
 
-/// 학생 한 명의 학생부 자료: 영역 7개(교과·자유학기는 과목·활동별) + 참고자료가 있을 때만 출결·영역 미지정
+/// 학생 한 명의 학생부 자료: 영역 8개(출결 포함, 교과·자유학기는 과목·활동별) + 참고자료가 있을 때만 봉사·영역 미지정
 pub fn student_record(conn: &Connection, student_id: i64) -> AppResult<Vec<RecordTab>> {
     let obs = student_observations(conn, student_id)?;
     let drafts = student_drafts(conn, student_id)?;
@@ -439,14 +509,15 @@ pub fn student_record(conn: &Connection, student_id: i64) -> AppResult<Vec<Recor
         let text = drafts.iter().find(|d| d.area == area.as_str() && d.subject == subject).cloned();
         let included = refs.iter().filter(|o| !o.excluded).count();
         let status = status_of(included, text.as_ref().map(|d| d.reviewed)).to_string();
-        out.push(RecordTab { area: area.as_str().into(), label: area.label().into(), subject, limit_chars: area.char_limit(), refs, text, status });
+        let attendance = (area == Area::Attendance).then(|| attendance_summary(&refs));
+        out.push(RecordTab { area: area.as_str().into(), label: area.label().into(), subject, limit_chars: area.char_limit(), refs, text, status, attendance });
     };
     for a in Area::RECORD_TABS {
         for s in subjects_for(a, &my, &obs, &drafts) {
             push(a, s);
         }
     }
-    for a in [Area::Attendance, Area::Volunteer, Area::None] {
+    for a in [Area::Volunteer, Area::None] {
         if obs.iter().any(|o| o.area == a.as_str()) || drafts.iter().any(|d| d.area == a.as_str()) {
             push(a, String::new());
         }
@@ -561,7 +632,7 @@ pub fn export_finals(conn: &Connection, class_id: Option<i64>, path: &std::path:
     let mut rows: Vec<(String, Option<i64>, String, String, String, String, i64)> = st
         .query_map(params![class_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?)))?
         .collect::<Result<_, _>>()?;
-    let order = |a: &str| Area::RECORD_TABS.iter().chain([Area::Attendance, Area::Volunteer].iter()).position(|x| x.as_str() == a).unwrap_or(99);
+    let order = |a: &str| Area::RECORD_TABS.iter().chain([Area::Volunteer].iter()).position(|x| x.as_str() == a).unwrap_or(99);
     rows.sort_by(|x, y| order(&x.3).cmp(&order(&y.3)).then(x.4.cmp(&y.4)).then(x.0.cmp(&y.0)).then(x.1.unwrap_or(999).cmp(&y.1.unwrap_or(999))));
     let xerr = |e: rust_xlsxwriter::XlsxError| AppError::msg(format!("엑셀 파일을 만들지 못했습니다: {e}"));
     let head = XFormat::new().set_bold().set_background_color(Color::RGB(0xE8F0EA)).set_border_bottom(FormatBorder::Thin).set_align(FormatAlign::Center);
@@ -612,6 +683,47 @@ pub fn export_finals(conn: &Connection, class_id: Option<i64>, path: &std::path:
     })?;
     Ok(FinalsExport { path: path.display().to_string(), rows: rows.len(), students: students.len() })
 }
+#[cfg(test)]
+mod attendance_tests {
+    use super::*;
+
+    #[test]
+    fn attendance_facts_by_kind_and_reason() {
+        assert_eq!(attendance_fact("감기로 병원 진료 결석"), Some(("결석", "sick", 1)));
+        assert_eq!(attendance_fact("독감으로 3일간 결석"), Some(("결석", "sick", 3)));
+        assert_eq!(attendance_fact("연락 없이 지각"), Some(("지각", "unexcused", 1)));
+        assert_eq!(attendance_fact("가정 사정으로 조퇴"), Some(("조퇴", "other", 1)));
+        assert_eq!(attendance_fact("체험학습으로 2일 결석"), Some(("결석", "excused", 2)));
+        assert_eq!(attendance_fact("5교시 결과 처리 (보건실)"), Some(("결과", "other", 1)));
+        assert_eq!(attendance_fact("이번 주 지각 2회"), Some(("지각", "other", 2)));
+        assert_eq!(attendance_fact("수업 태도 좋음"), None);
+    }
+
+    #[test]
+    fn summary_counts_only_included_refs() {
+        let o = |content: &str, excluded: bool| ObservationDto {
+            id: 1,
+            note_id: None,
+            student_id: Some(1),
+            student_label: None,
+            area: "attendance".into(),
+            area_label: "출결".into(),
+            content: content.into(),
+            observed_on: "2026-10-01".into(),
+            source: "ai".into(),
+            edited: false,
+            created_at: "2026-10-01T08:00:00".into(),
+            note_raw: None,
+            note_created_at: None,
+            subject: String::new(),
+            excluded,
+        };
+        let rows = attendance_summary(&[o("감기로 결석", false), o("무단 지각", false), o("무단 지각", true), o("2일간 체험학습 결석", false)]);
+        assert_eq!(rows.iter().map(|r| r.kind.as_str()).collect::<Vec<_>>(), vec!["결석", "지각", "조퇴", "결과"]);
+        assert_eq!((rows[0].sick, rows[0].excused, rows[1].unexcused, rows[2].other), (1, 2, 1, 0));
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -697,7 +809,9 @@ mod tests {
         assert!(d.check.novel_words.iter().any(|w| w.contains("리더십")));
         assert!(d.check.novel_words.iter().any(|w| w.contains("탁월")));
         let tabs = student_record(&c, 1).unwrap();
-        assert_eq!(tabs.iter().filter(|t| t.area != "free_semester").count(), 6, "자유학기 밖 영역 6칸");
+        assert_eq!(tabs.iter().filter(|t| t.area != "free_semester").count(), 7, "자유학기 밖 영역 7칸 (출결 포함)");
+        assert_eq!(tabs[0].area, "attendance", "출결이 맨 앞");
+        assert!(tabs[0].attendance.is_some() && tabs[1].attendance.is_none());
         assert_eq!(tabs.iter().filter(|t| t.area == "free_semester").count(), 4, "자유학기 활동 4칸");
         let subj = tabs.iter().find(|t| t.area == "subject").unwrap();
         assert_eq!((subj.status.as_str(), subj.text.as_ref().map(|d| d.id)), ("draft", Some(id)));

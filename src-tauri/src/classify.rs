@@ -98,6 +98,12 @@ pub struct Plan {
     pub guard_notes: Vec<String>,
     #[serde(default)]
     pub unknown_names: Vec<String>,
+    /// 기록 속 학생 개인정보 → 학생 명렬표 (형식 규칙으로 찾는다)
+    #[serde(default)]
+    pub profile: Vec<crate::profile::ProfileItem>,
+    /// 특이사항으로 보이는 문장 → 어디에 둘지 교사에게 묻는다
+    #[serde(default)]
+    pub specials: Vec<crate::profile::SpecialItem>,
 }
 
 pub struct Ctx<'a> {
@@ -479,7 +485,73 @@ fn rule_plan_from(a: &Analysis, ctx: &Ctx) -> Plan {
     // 시간표 문장("월 3교시 2-1 국어", "내일 3교시 보강")은 시간표에 반영하므로 관찰·일정·할 일로 만들지 않는다
     let tt = crate::ttinput::find(a);
     items.retain(|i| !crate::ttinput::covered_by(&tt, raw, &i.text));
-    Plan { summary: extractive_summary(raw, a.today), items, guard_notes: class_mismatch_notes(a), unknown_names: vec![] }
+    let mut plan = Plan { summary: extractive_summary(raw, a.today), items, guard_notes: class_mismatch_notes(a), unknown_names: vec![], profile: vec![], specials: vec![] };
+    attach_profile(a, &mut plan);
+    plan
+}
+
+/// 개인정보 문장 → `Plan.profile`, 특이사항 문장 → `Plan.specials`.
+/// 그 문장에서 나온 학생 관찰(개인정보면 할 일·일정까지)은 뺀다 — 개인정보는 학생부 자료·할 일로 보내지 않는다.
+fn attach_profile(a: &Analysis, plan: &mut Plan) {
+    let raw = a.text.as_str();
+    let mut everyone: Vec<PlanStudent> = Vec::new();
+    for c in &a.clauses {
+        for &m in &c.students {
+            push_student(&mut everyone, plan_student(&a.students[m]));
+        }
+    }
+    for (si, sent) in a.sentences.iter().enumerate() {
+        let text = sent.slice(raw);
+        let mut studs: Vec<PlanStudent> = Vec::new();
+        for c in a.clauses.iter().filter(|c| c.sentence == si) {
+            for &m in &c.students {
+                push_student(&mut studs, plan_student(&a.students[m]));
+            }
+        }
+        // 문장에 이름이 없으면, 기록 전체에 학생이 한 명일 때 그 학생 ("홍길동 전학 옴. 주소 …")
+        if studs.is_empty() && everyone.len() == 1 {
+            studs = everyone.clone();
+        }
+        let span = *sent;
+        let drop = |items: &mut Vec<PlanItem>, kinds: &[ItemKind]| {
+            items.retain(|i| !(kinds.contains(&i.kind) && locate(raw, &i.text).is_some_and(|sp| sp.overlaps(&span))));
+        };
+        let hits = crate::profile::find_hits(text);
+        if studs.len() != 1 {
+            // 누구의 정보인지 하나로 정할 수 없으면 명렬표에 넣지 않는다. 그래도 학생부 자료로는 보내지 않는다.
+            if !hits.is_empty() {
+                drop(&mut plan.items, &[ItemKind::Student]);
+                if studs.len() > 1 {
+                    let note = "개인정보(연락처·주소 등)가 있지만 여러 학생이 함께 적혀 누구의 것인지 정할 수 없어 학생 명렬표에 넣지 않았습니다. 학생별로 나눠 적어 주세요.".to_string();
+                    if !plan.guard_notes.contains(&note) {
+                        plan.guard_notes.push(note);
+                    }
+                }
+            }
+            continue;
+        }
+        let student = studs.remove(0);
+        if !hits.is_empty() {
+            for h in hits {
+                let it = crate::profile::ProfileItem { field: h.field.to_string(), value: h.value, relation: h.relation, student: student.clone(), text: text::tidy(text) };
+                if !plan.profile.contains(&it) {
+                    plan.profile.push(it);
+                }
+            }
+            drop(&mut plan.items, &[ItemKind::Student, ItemKind::Task, ItemKind::Event]);
+        } else if crate::profile::is_special(text) {
+            let area = a
+                .clauses
+                .iter()
+                .filter(|c| c.sentence == si)
+                .find_map(|c| c.area_hint)
+                .filter(|h| *h != Area::Attendance && *h != Area::None)
+                .map(|h| h.as_str().to_string())
+                .unwrap_or_default();
+            plan.specials.push(crate::profile::SpecialItem { text: text::tidy(text), student, area });
+            drop(&mut plan.items, &[ItemKind::Student]);
+        }
+    }
 }
 
 /// 원문에서 항목 문구의 위치를 찾는다 (정확히 있으면 그 위치, 아니면 가장 비슷한 절)
@@ -944,7 +1016,9 @@ pub fn guard_llm(raw: &str, out: &LlmOutput, ctx: &Ctx) -> Plan {
     summary = text::truncate_chars(&strip_leading_when(&summary, ctx.today), SUMMARY_MAX);
 
     notes.dedup();
-    Plan { summary, items: merged.into_iter().take(MAX_ITEMS).collect(), guard_notes: notes, unknown_names: unknown }
+    let mut plan = Plan { summary, items: merged.into_iter().take(MAX_ITEMS).collect(), guard_notes: notes, unknown_names: unknown, profile: vec![], specials: vec![] };
+    attach_profile(&a, &mut plan);
+    plan
 }
 
 #[cfg(test)]
@@ -1022,6 +1096,23 @@ mod tests {
         let s = |id, name: &str, l: &str, n| RosterEntry { id, name: name.into(), class_label: Some(l.into()), number: Some(n) };
         let c = |l: &str| RosterEntry { id: 0, name: String::new(), class_label: Some(l.into()), number: None };
         vec![s(1, "심청", "1-1", 1), s(2, "전우치", "1-1", 2), c("1-1"), c("2-1"), c("3-1")]
+    }
+
+    #[test]
+    fn personal_info_with_two_students_goes_nowhere() {
+        let r = one_class_school();
+        let c = Ctx { today: today(), roster: &r, duties: &[] };
+        let raw = "1-1 심청, 전우치 보호자 연락처 010-1234-5678";
+        // AI 가 번호가 든 문장을 학생 관찰로 낸 경우에도 학생부 자료로 보내지 않는다
+        let out = llm(
+            r#"{"summary":"보호자 연락처","items":[
+            {"kind":"student","text":"1-1 심청, 전우치 보호자 연락처 010-1234-5678","students":["1-1 심청","1-1 전우치"],"area":"behavior","duty":0,"date":""}]}"#,
+        );
+        for p in [rule_plan(raw, &c), guard_llm(raw, &out, &c)] {
+            assert!(p.profile.is_empty(), "누구의 번호인지 모르면 명렬표에 넣지 않음: {:?}", p.profile);
+            assert!(!p.items.iter().any(|i| i.text.contains("010-")), "학생부 자료로 보내지 않음: {:?}", p.items);
+            assert!(p.guard_notes.iter().any(|n| n.contains("여러 학생")), "{:?}", p.guard_notes);
+        }
     }
 
     #[test]

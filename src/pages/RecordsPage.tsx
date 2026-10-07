@@ -8,11 +8,70 @@ import { IconCopy, IconSpark } from "../components/Icons";
 import { confirmDialog } from "../components/Modal";
 import { fmtDate, fmtDateTime } from "../lib/format";
 import { AREA_ORDER, AREA_SHORT, areaLabel, RECORD_TABS } from "../lib/labels";
+import { isNewItem, useNewSince } from "../lib/seen";
 import { useLoad, useStore } from "../lib/store";
-import type { Area, DraftCheck, Observation, RecordStatus, RecordTab, Student } from "../types";
+import type { AppSettings, Area, AttendanceRow, DraftCheck, Observation, RecordStatus, RecordTab, Student } from "../types";
 
 const STATUS_TEXT: Record<RecordStatus, string> = { none: "자료 없음", refs: "참고자료만", draft: "초안", final: "최종안" };
 const STATUS_MARK: Record<RecordStatus, string> = { none: "·", refs: "○", draft: "◐", final: "●" };
+const AREA_KEY = "tn.records.area";
+const CLASS_KEY = "tn.records.class";
+const remembered = (k: string): string | null => {
+  try {
+    return window.localStorage.getItem(k);
+  } catch {
+    return null;
+  }
+};
+const remember = (k: string, v: string) => {
+  try {
+    window.localStorage.setItem(k, v);
+  } catch {
+    /* 저장 못 해도 동작 */
+  }
+};
+
+/** 출결 칸: 결석·지각·조퇴·결과를 사유별로 (빼지 않은 참고자료 기준) */
+function AttendanceSummary({ rows }: { rows: AttendanceRow[] }) {
+  const total = (r: AttendanceRow) => r.sick + r.unexcused + r.other + r.excused;
+  const any = rows.some((r) => total(r) > 0);
+  return (
+    <section className="panel att-summary">
+      <h2>출결 요약</h2>
+      {!any ? (
+        <p className="muted small">결석·지각·조퇴·결과로 정리된 출결 기록이 아직 없습니다.</p>
+      ) : (
+        <table className="att-table">
+          <thead>
+            <tr>
+              <th>구분</th>
+              <th>질병</th>
+              <th>미인정</th>
+              <th>기타</th>
+              <th title="체험학습·경조사 등 출석으로 인정">출석 인정</th>
+              <th>합계</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.kind} className={total(r) ? "" : "zero"}>
+                <th>{r.kind}</th>
+                <td>{r.sick || ""}</td>
+                <td>{r.unexcused || ""}</td>
+                <td>{r.other || ""}</td>
+                <td>{r.excused || ""}</td>
+                <td>
+                  <b>{total(r)}</b>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      <p className="small muted">기록 문장에서 사유를 골라 센 참고용 숫자입니다. 나이스 출결 자료와 맞춰 확인하세요. 근거 기록은 아래 참고자료에 있습니다.</p>
+    </section>
+  );
+}
 
 function Highlighted({ text, words }: { text: string; words: string[] }) {
   const esc = words.filter((w) => w.length > 0).map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
@@ -34,7 +93,7 @@ function Highlighted({ text, words }: { text: string; words: string[] }) {
 }
 
 /** 참고자료 한 줄: 날짜·내용·원문, 영역 옮기기, 과목(활동) 고르기, 빼기 */
-function RefRow({ o, subjects, onChanged }: { o: Observation; subjects: string[]; onChanged: () => void }) {
+function RefRow({ o, subjects, onChanged, since }: { o: Observation; subjects: string[]; onChanged: () => void; since: string | null }) {
   const { toast, navigate } = useStore();
   const update = async (patch: { area?: Area; subject?: string | null; excluded?: boolean }) => {
     try {
@@ -58,6 +117,7 @@ function RefRow({ o, subjects, onChanged }: { o: Observation; subjects: string[]
         <span className="ref-date">{fmtDate(o.observed_on)}</span>
         <span className="ref-text">{o.content}</span>
         {o.excluded && <span className="tag">뺌</span>}
+        {isNewItem(o, since) && <span className="new-tag" title="지난번에 본 뒤 AI가 넣은 참고자료">새</span>}
       </div>
       <div className="ref-tools">
         {o.note_raw && (
@@ -96,7 +156,21 @@ function RefRow({ o, subjects, onChanged }: { o: Observation; subjects: string[]
 }
 
 /** 칸 하나: 참고자료 + 최종안 입력 칸 */
-function TabEditor({ studentId, tab, subjects, hasModel, onChanged }: { studentId: number; tab: RecordTab; subjects: string[]; hasModel: boolean; onChanged: () => void }) {
+function TabEditor({
+  studentId,
+  tab,
+  subjects,
+  hasModel,
+  onChanged,
+  since,
+}: {
+  studentId: number;
+  tab: RecordTab;
+  subjects: string[];
+  hasModel: boolean;
+  onChanged: () => void;
+  since: string | null;
+}) {
   const { toast } = useStore();
   const [body, setBody] = useState(tab.text?.body ?? "");
   const [check, setCheck] = useState<DraftCheck | null>(tab.text?.check ?? null);
@@ -146,9 +220,10 @@ function TabEditor({ studentId, tab, subjects, hasModel, onChanged }: { studentI
   const over = !!check?.over;
   return (
     <div className="tab-editor">
+      {tab.attendance && <AttendanceSummary rows={tab.attendance} />}
       <section className="panel">
         <h2>
-          참고자료 <span className="count">{included}</span>
+          {tab.area === "attendance" ? "근거 기록" : "참고자료"} <span className="count">{included}</span>
           {tab.refs.length > included && <small className="muted"> (뺀 것 {tab.refs.length - included})</small>}
         </h2>
         {tab.refs.length === 0 ? (
@@ -156,14 +231,14 @@ function TabEditor({ studentId, tab, subjects, hasModel, onChanged }: { studentI
         ) : (
           <ul className="ref-list">
             {tab.refs.map((o) => (
-              <RefRow key={o.id} o={o} subjects={subjects} onChanged={onChanged} />
+              <RefRow key={o.id} o={o} subjects={subjects} onChanged={onChanged} since={since} />
             ))}
           </ul>
         )}
       </section>
       <section className={`panel final-box status-${tab.status}`}>
         <div className="final-head">
-          <h2>최종안</h2>
+          <h2>{tab.area === "attendance" ? "출결상황 특기사항 최종안" : "최종안"}</h2>
           <span className={`rec-status st-${tab.status}`}>
             {STATUS_MARK[tab.status]} {STATUS_TEXT[tab.status]}
           </span>
@@ -262,7 +337,15 @@ export function RecordsPage() {
   const { params, toast, bump } = useStore();
   const [q, setQ] = useState("");
   const [sid, setSid] = useState<number | null>(params.studentId ?? null);
-  const [area, setArea] = useState<Area>("autonomous");
+  // 마지막으로 보던 영역을 기억한다
+  const [area, setAreaState] = useState<Area>(() => {
+    const a = remembered(AREA_KEY) as Area | null;
+    return a && (RECORD_TABS as string[]).includes(a) ? a : "autonomous";
+  });
+  const setArea = (a: Area) => {
+    setAreaState(a);
+    remember(AREA_KEY, a);
+  };
   const [subject, setSubject] = useState<string>("");
   const students = useLoad(() => api.listStudents(null, null), []);
   const classes = useLoad(() => api.listClasses(), []);
@@ -279,6 +362,14 @@ export function RecordsPage() {
   const tab = subTabs.find((t) => t.subject === sub) ?? null;
   const extraAreas = Array.from(new Set(tabs.filter((t) => !RECORD_TABS.includes(t.area)).map((t) => t.area)));
   const status = useLoad(() => api.recordStatus(area, sub), [area, sub]);
+  // 지난번에 본 뒤 AI 가 넣은 참고자료: 학생 이름·영역 탭·학급 제목줄에 점 (이번 방문 동안)
+  const since = useNewSince("records");
+  const fresh = useLoad(async () => (since ? api.newSince(since) : null), [since]);
+  const freshObs = fresh.data?.observations ?? [];
+  const freshStudents = new Set(freshObs.map((o) => o.student_id));
+  const freshAreas = new Set(freshObs.map((o) => o.area));
+  const freshClasses = new Set(freshObs.map((o) => o.class_label ?? "반 미지정"));
+  const newDot = (title: string) => <span className="new-dot" title={title} aria-label="새 참고자료" />;
   const statusOf = (id: number): RecordStatus => status.data?.find((r) => r.student_id === id)?.status ?? "none";
 
   const groups = useMemo(() => {
@@ -291,6 +382,32 @@ export function RecordsPage() {
     return Array.from(m.entries());
   }, [students.data, q]);
   const current = students.data?.find((s) => s.id === sid) ?? null;
+  // 학급 펼침: 한 번에 한 학급. 처음엔 담임반, 그 뒤로는 마지막으로 보던 학급
+  const [homeroom, setHomeroom] = useState<string | null>(null);
+  useEffect(() => {
+    api
+      .getSettings()
+      .then((s: AppSettings) => setHomeroom(s.homeroom || ""))
+      .catch(() => setHomeroom(""));
+  }, []);
+  const [openClass, setOpenClassState] = useState<string | null | undefined>(() => remembered(CLASS_KEY) ?? undefined);
+  const setOpenClass = (c: string | null) => {
+    setOpenClassState(c);
+    remember(CLASS_KEY, c ?? "");
+  };
+  const labels = groups.map(([l]) => l);
+  const opened: string | null =
+    openClass === undefined || (openClass !== null && openClass !== "" && !labels.includes(openClass))
+      ? homeroom !== null && labels.includes(homeroom)
+        ? homeroom
+        : labels[0] ?? null
+      : openClass || null;
+  // 고른 학생의 학급은 펼쳐 둔다 (찾기·다른 화면에서 왔을 때)
+  useEffect(() => {
+    if (current?.class_label && current.class_label !== opened && !q) setOpenClass(current.class_label);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [current?.id]);
+  const matches = q ? groups.flatMap(([, l]) => l) : [];
   const subjectOptions = subTabs.map((t) => t.subject).filter(Boolean);
 
   const exportFinals = async () => {
@@ -329,6 +446,7 @@ export function RecordsPage() {
         {[...RECORD_TABS, ...extraAreas].map((a) => (
           <button key={a} role="tab" aria-selected={area === a} className={area === a ? "on" : ""} onClick={() => setArea(a)}>
             {tabName(a)}
+            {freshAreas.has(a) && newDot("새 참고자료가 있는 영역")}
           </button>
         ))}
       </div>
@@ -344,16 +462,44 @@ export function RecordsPage() {
       )}
       <div className="records-layout">
         <aside className="student-pick">
-          <input className="search-input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="학생 찾기" />
+          <input
+            className="search-input"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            onKeyDown={(e) => {
+              // 찾은 학생으로 바로 이동 (학급과 상관없이)
+              if (e.key === "Enter" && matches.length > 0) {
+                const s = matches[0]!;
+                setSid(s.id);
+                setOpenClass(s.class_label ?? "반 미지정");
+                setQ("");
+              }
+              if (e.key === "Escape") setQ("");
+            }}
+            placeholder="학생 찾기 (Enter 로 이동)"
+            aria-label="학생 찾기"
+          />
           <p className="small muted status-legend">● 최종안 ◐ 초안 ○ 참고자료만 · 없음</p>
           {students.data && students.data.length === 0 && <p className="muted small">학생이 없습니다. 학생 화면에서 나이스 명렬표를 가져오세요.</p>}
           {groups.map(([label, list]) => {
             const done = list.filter((s) => statusOf(s.id) === "final").length;
+            // 찾는 중이면 맞는 학생이 있는 학급을 모두 펼친다
+            const isOpen = q ? true : opened === label;
             return (
-              <div key={label} className="pick-group">
-                <div className="pick-class">
-                  {label} <small className="muted">최종안 {done}/{list.length}</small>
-                </div>
+              <div key={label} className={`pick-group ${isOpen ? "open" : ""}`}>
+                <button
+                  className="pick-class"
+                  aria-expanded={isOpen}
+                  onClick={() => {
+                    if (q) return;
+                    setOpenClass(opened === label ? null : label);
+                  }}
+                  title={isOpen ? "접기" : "펼치기"}
+                >
+                  <span className="pick-caret">{isOpen ? "▾" : "▸"}</span> {label} {freshClasses.has(label) && newDot("새 참고자료가 있는 학급")}
+                  <small className="muted">최종안 {done}/{list.length}</small>
+                </button>
+                {isOpen && (
                 <ul>
                   {list.map((s) => {
                     const st = statusOf(s.id);
@@ -362,18 +508,20 @@ export function RecordsPage() {
                         <button className={s.id === sid ? "on" : ""} onClick={() => setSid(s.id)} title={STATUS_TEXT[st]}>
                           <span className={`rec-mark st-${st}`}>{STATUS_MARK[st]}</span>
                           <span className="muted">{s.number ?? ""}</span> {s.name}
+                          {freshStudents.has(s.id) && newDot("새 참고자료가 있는 학생")}
                         </button>
                       </li>
                     );
                   })}
                 </ul>
+                )}
               </div>
             );
           })}
         </aside>
         <div className="records-main">
           {sid === null || !current ? (
-            <Empty title="왼쪽에서 학생을 고르세요.">학생별 참고자료가 영역 7개(창체 자율·자치, 교과, 행특, 동아리, 진로, 자유학기, 일상생활)로 모입니다.</Empty>
+            <Empty title="왼쪽에서 학생을 고르세요.">학생별 참고자료가 출결, 창체 자율·자치, 교과, 행특, 동아리, 진로, 자유학기, 일상생활로 모입니다.</Empty>
           ) : record.error ? (
             <ErrorBox error={record.error} onRetry={record.reload} />
           ) : !tab ? (
@@ -390,7 +538,7 @@ export function RecordsPage() {
                 </span>
               </h2>
               {area === "daily" && <p className="hint">일상생활 활동상황은 특수교육 기본 교육과정 학생의 영역입니다(기재요령). 해당 학생이면 참고자료를 이 영역으로 옮겨 쓰세요.</p>}
-              <TabEditor key={`${sid}-${tab.area}-${tab.subject}-${tab.text?.updated_at ?? ""}`} studentId={sid} tab={tab} subjects={subjectOptions} hasModel={hasModel} onChanged={refresh} />
+              <TabEditor key={`${sid}-${tab.area}-${tab.subject}-${tab.text?.updated_at ?? ""}`} studentId={sid} tab={tab} subjects={subjectOptions} hasModel={hasModel} onChanged={refresh} since={since} />
             </>
           )}
         </div>

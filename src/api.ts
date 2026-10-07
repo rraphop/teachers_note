@@ -1,5 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
+  Contact,
+  NewSince,
   Memo,
   MemoColor,
   TodayLayout,
@@ -197,6 +199,13 @@ export const api = {
   updateSettings: (value: AppSettings) => call<AppSettings>("update_settings", { value }),
   setAutostart: (enabled: boolean) => call<boolean>("set_autostart", { enabled }),
   setAlwaysOnTop: (enabled: boolean) => call<boolean>("set_always_on_top", { enabled }),
+  // 기록 속 개인정보 → 학생 명렬표
+  resolveProfileChange: (id: number, accept: boolean, replaceId: number | null) => call<void>("resolve_profile_change", { id, accept, replaceId }),
+  answerNoteQuestion: (id: number, choice: "record" | "roster") => call<void>("answer_note_question", { id, choice }),
+  setStudentContacts: (studentId: number, contacts: Contact[]) => call<Contact[]>("set_student_contacts", { studentId, contacts }),
+  // 메뉴의 새 항목
+  markSeen: (menu: "records" | "duties" | "tasks" | "students") => call<string | null>("mark_seen", { menu }),
+  newSince: (since: string) => call<NewSince>("new_since", { since }),
   setWindowTransparency: (value: number) => call<number>("set_window_transparency", { value }),
   // 오늘 화면 메모·칸 배치
   listMemos: () => call<Memo[]>("list_memos"),

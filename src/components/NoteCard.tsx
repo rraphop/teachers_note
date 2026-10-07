@@ -4,7 +4,9 @@ import { fmtDate, fmtDateTime } from "../lib/format";
 import { areaShort, STATUS_LABEL } from "../lib/labels";
 import { useStore } from "../lib/store";
 import type { Note } from "../types";
+import { maskText, useMaskContacts } from "../lib/privacy";
 import { ClassifyEditor } from "./ClassifyEditor";
+import { ProfileChips, ProfileQuestions } from "./ProfileParts";
 import { IconEdit, IconSpark, IconTrash } from "./Icons";
 import { confirmDialog } from "./Modal";
 
@@ -82,6 +84,8 @@ export function NoteCard({ note, highlight }: { note: Note; highlight?: boolean 
   const [expanded, setExpanded] = useState(false);
   const unclassified = note.status === "failed" || note.status === "pending";
   const long = note.raw_text.length > 220;
+  // 학생 명렬표에서 '연락처·주소 가리기'를 켜면 기록에서도 가린다
+  const masked = useMaskContacts();
 
   const reclassify = async () => {
     try {
@@ -141,9 +145,9 @@ export function NoteCard({ note, highlight }: { note: Note; highlight?: boolean 
           {note.track && " · 직접 옮김"}
         </span>
       </header>
-      {note.summary && <p className="note-summary">{note.summary}</p>}
+      {note.summary && <p className="note-summary">{masked ? maskText(note.summary) : note.summary}</p>}
       {rawEdit === null ? (
-        <p className={`note-raw ${long && !expanded ? "clamp" : ""}`}>{note.raw_text}</p>
+        <p className={`note-raw ${long && !expanded ? "clamp" : ""}`}>{masked ? maskText(note.raw_text) : note.raw_text}</p>
       ) : (
         <div className="raw-edit">
           <textarea value={rawEdit} rows={Math.min(10, Math.max(3, rawEdit.split("\n").length + 1))} onChange={(e) => setRawEdit(e.target.value)} />
@@ -161,6 +165,8 @@ export function NoteCard({ note, highlight }: { note: Note; highlight?: boolean 
         </button>
       )}
       <NoteChips note={note} />
+      <ProfileChips note={note} />
+      <ProfileQuestions note={note} />
       {unclassified && note.status_reason && <p className="reason">{note.status_reason}</p>}
       {note.status === "processing" && <p className="reason soft">AI가 정리하고 있습니다. 기다리는 동안 다른 기록을 계속 써도 됩니다.</p>}
       {note.unknown_names.length > 0 && (

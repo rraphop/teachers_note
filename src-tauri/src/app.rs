@@ -9,7 +9,7 @@ use crate::models::{self, Downloader};
 use crate::notes::{self, ApplyMode};
 use crate::paths::AppPaths;
 use crate::reminders;
-use crate::runtime::{LaunchConfig, Runtime, RuntimeError};
+use crate::runtime::{LaunchConfig, Runtime, RuntimeError, RuntimeState};
 use crate::settings;
 use crate::util;
 use crate::{duties, students};
@@ -86,11 +86,16 @@ pub fn infer_timeout(cfg: &LaunchConfig) -> Duration {
 pub struct RuntimeBackend<'a> {
     pub rt: &'a Runtime,
     pub cfg: &'a LaunchConfig,
+    /// 받은 글자 수를 알릴 곳 (있으면 답을 조금씩 받는다 — AI 정리 진행 표시)
+    pub progress: Option<&'a dyn Fn(usize)>,
 }
 
 impl ChatBackend for RuntimeBackend<'_> {
     fn chat(&self, body: Value, timeout: Duration) -> Result<String, RuntimeError> {
-        self.rt.chat(self.cfg, body, timeout)
+        match self.progress {
+            Some(f) => self.rt.chat_stream(self.cfg, body, timeout, f),
+            None => self.rt.chat(self.cfg, body, timeout),
+        }
     }
 }
 
@@ -116,15 +121,37 @@ pub fn classify_one(state: &AppState, note_id: i64, forced: bool) -> AppResult<(
     state.db.with(|c| notes::set_status(c, note_id, "processing", Some("AI가 정리하고 있습니다."), util::now()))?;
     (state.emit)("note-updated", json!({ "id": note_id }));
 
+    // 입력창 옆 'AI 정리 중' 진행 표시: 원문 저장 10% → 이름 대조 25% → AI 분류 25~85%(받은 글자 수로 짐작) → 안전 점검 95% → 배치 100%
+    let progress = |stage: &str, percent: u32| {
+        let waiting = state.queued.lock().unwrap_or_else(|e| e.into_inner()).len().saturating_sub(1);
+        (state.emit)("classify-progress", json!({ "note_id": note_id, "stage": stage, "percent": percent, "waiting": waiting }));
+    };
+    progress("saved", 10);
+    progress("names", 25);
+    let ready = matches!(state.runtime.state(), RuntimeState::Ready { ref model_id, .. } if *model_id == cfg.model_id);
+    if !ready {
+        progress("engine", 25);
+    }
+    let expected = (200 + raw.chars().count() * 3).min(1800) as f64;
+    let last = std::cell::Cell::new(25u32);
+    let on_chars = |n: usize| {
+        let p = 25 + ((n as f64 / expected).min(1.0) * 59.0) as u32;
+        if p > last.get() {
+            last.set(p);
+            progress("ai", p);
+        }
+    };
+
     let started = Instant::now();
     let started_at = util::fmt_dt(util::now());
     let ctx = Ctx { today: created.date(), roster: &roster, duties: &duty_list };
-    let backend = RuntimeBackend { rt: &state.runtime, cfg: &cfg };
+    let backend = RuntimeBackend { rt: &state.runtime, cfg: &cfg, progress: Some(&on_chars) };
     let result = llm::classify_note(&backend, &raw, &ctx, infer_timeout(&cfg));
     let ms = started.elapsed().as_millis() as i64;
     let now = util::now();
     match result {
         Ok(out) => {
+            progress("guard", 95);
             state.db.with(|c| {
                 // 처리하는 동안 기록이 지워졌으면 결과를 버린다
                 if notes::raw_and_created(c, note_id).is_err() {
@@ -138,6 +165,7 @@ pub fn classify_one(state: &AppState, note_id: i64, forced: bool) -> AppResult<(
                 Ok(())
             })?;
             crate::logging::info(&format!("AI 분류 완료: note={note_id} model={} {}ms", cfg.model_id, ms));
+            progress("done", 100);
         }
         Err(e) => {
             state.db.with(|c| {
@@ -152,6 +180,7 @@ pub fn classify_one(state: &AppState, note_id: i64, forced: bool) -> AppResult<(
                 Ok(())
             })?;
             crate::logging::warn(&format!("AI 분류 실패: note={note_id} kind={:?}", e.kind));
+            progress("failed", last.get());
         }
     }
     (state.emit)("note-updated", json!({ "id": note_id }));

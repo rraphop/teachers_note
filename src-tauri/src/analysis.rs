@@ -28,8 +28,9 @@ pub enum Area {
 }
 
 impl Area {
-    /// 학생부 자료 화면의 영역 7개 (수정목록 순서: 창체 자율·자치, 교과, 행특, 동아리, 진로, 자유학기, 일상생활)
-    pub const RECORD_TABS: [Area; 7] = [
+    /// 학생부 자료 화면의 영역 탭 (학생부 순서: 출결, 창체 자율·자치, 교과, 행특, 동아리, 진로, 자유학기, 일상생활)
+    pub const RECORD_TABS: [Area; 8] = [
+        Area::Attendance,
         Area::Autonomous,
         Area::Subject,
         Area::Behavior,

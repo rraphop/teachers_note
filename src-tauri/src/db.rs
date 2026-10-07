@@ -18,6 +18,7 @@ const MIGRATIONS: &[(i64, &str)] = &[
     (6, include_str!("../migrations/0006_record_areas.sql")),
     (7, include_str!("../migrations/0007_tt_color_scopes.sql")),
     (8, include_str!("../migrations/0008_memos.sql")),
+    (9, include_str!("../migrations/0009_profile.sql")),
 ];
 
 pub fn latest_version() -> i64 {
@@ -312,9 +313,42 @@ mod tests {
         }
         let db = Db::open(&path).unwrap();
         db.with(|c| {
-            assert_eq!(c.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))?, 8);
+            assert_eq!(c.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))?, latest_version());
             assert_eq!(c.query_row("SELECT COUNT(*) FROM timetable_colors", [], |r| r.get::<_, i64>(0))?, 1);
             assert_eq!(c.query_row("SELECT COUNT(*) FROM memos", [], |r| r.get::<_, i64>(0))?, 0);
+            Ok(())
+        })
+        .unwrap();
+    }
+    #[test]
+    fn migration_9_moves_guardian_phone_to_contacts() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("n.db");
+        {
+            let c = Connection::open(&path).unwrap();
+            configure(&c).unwrap();
+            for (v, sql) in MIGRATIONS.iter().take(8) {
+                c.execute_batch(sql).unwrap();
+                if *v == 1 {
+                    c.execute("INSERT INTO app_meta(key, value) VALUES ('app', ?1)", params![APP_ID]).unwrap();
+                }
+            }
+            c.execute_batch(
+                "PRAGMA user_version = 8;
+                 INSERT INTO students(name, guardian_phone, created_at, updated_at) VALUES ('홍길동', '010-9876-5432', 'x', 'x'), ('성춘향', '', 'x', 'x');",
+            )
+            .unwrap();
+        }
+        let db = Db::open(&path).unwrap();
+        db.with(|c| {
+            assert_eq!(c.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))?, 9);
+            let rows: Vec<(i64, String, String)> = {
+                let mut st = c.prepare("SELECT student_id, relation, phone FROM student_contacts")?;
+                st.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?.collect::<Result<_, _>>()?
+            };
+            assert_eq!(rows, vec![(1, String::new(), "010-9876-5432".to_string())], "예전 보호자 연락처는 첫 연락처로");
+            assert_eq!(c.query_row("SELECT COUNT(*) FROM profile_changes", [], |r| r.get::<_, i64>(0))?, 0);
+            assert_eq!(c.query_row("SELECT COUNT(*) FROM note_questions", [], |r| r.get::<_, i64>(0))?, 0);
             Ok(())
         })
         .unwrap();

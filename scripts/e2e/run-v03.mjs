@@ -195,7 +195,7 @@ try {
   await app.evaluate(`document.querySelector('.update-log-btn').click()`);
   await waitFor(() => app.evaluate(`!!document.querySelector('.changelog')`), { label: "업데이트 기록" });
   const log = await app.text(".dialog");
-  check("업데이트 기록: v0.3 (내보내기·되돌리기)", log.includes("v0.3") && log.includes("엑셀") && log.includes("되돌리기"), "");
+  check("업데이트 기록: v1.0 기능 소개 (내보내기·되돌리기)", log.includes("v1.0") && log.includes("엑셀") && log.includes("되돌리기"), "");
   await app.screenshot(path.join(shots, "46-update-log-v03.png"));
 } catch (e) {
   check("E2E 실행", false, e instanceof Error ? e.stack ?? e.message : String(e));

@@ -301,7 +301,7 @@ try {
   await app.evaluate(`document.querySelector('.update-log-btn').click()`);
   await waitFor(() => app.evaluate(`!!document.querySelector('.changelog')`), { label: "업데이트 기록" });
   const log = await app.text(".dialog");
-  check("업데이트 기록: v0.9", log.includes("v0.9") && log.includes("오늘 업무 요약") && log.includes("영역 7개"), "");
+  check("업데이트 기록: v1.0 기능 소개 (업무 요약·학생부 자료)", log.includes("v1.0") && log.includes("업무 요약") && log.includes("학생부 자료") && log.includes("최종안"), "");
 } catch (e) {
   check("E2E 실행", false, e instanceof Error ? e.stack ?? e.message : String(e));
 } finally {

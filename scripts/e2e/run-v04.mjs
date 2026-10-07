@@ -160,7 +160,7 @@ try {
   await app.evaluate(`document.querySelector('.update-log-btn').click()`);
   await waitFor(() => app.evaluate(`!!document.querySelector('.changelog')`), { label: "업데이트 기록" });
   const log = await app.text(".dialog");
-  check("업데이트 기록: v0.4 (학년도 마감·새 학년도·입력칸)", log.includes("v0.4") && log.includes("학년도 마감") && log.includes("새 학년도"), "");
+  check("업데이트 기록: v1.0 기능 소개 (학년도 마감)", log.includes("v1.0") && log.includes("학년도 마감"), "");
   await app.screenshot(path.join(shots, "52-update-log-v04.png"));
 } catch (e) {
   check("E2E 실행", false, e instanceof Error ? e.stack ?? e.message : String(e));

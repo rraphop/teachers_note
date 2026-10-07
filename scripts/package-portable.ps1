@@ -178,7 +178,7 @@ try {
   Remove-Item -Recurse -Force $moved -ErrorAction SilentlyContinue
 }
 
-Step '9. 파일 하나 버전 교무수첩(버전).exe (바탕화면에 두고 실행)'
+Step '9. 파일 하나 버전 교무수첩_버전.exe (바탕화면에 두고 실행)'
 # 조립한 폴더 전체를 묶음(payload.zip)으로 만들고, 파일 목록과 SHA-256 을 실행기 안에 함께 넣는다
 $appVersion = ($meta.packages | Where-Object { $_.name -eq 'teacher-notebook' } | Select-Object -First 1).version
 $work = Join-Path $OutRoot '.single-work'
@@ -186,7 +186,9 @@ if (Test-Path $work) { Remove-Item -Recurse -Force $work }
 New-Item -ItemType Directory -Force $work | Out-Null
 $payload = Join-Path $work 'payload.zip'
 Add-Type -AssemblyName System.IO.Compression.FileSystem
-[System.IO.Compression.ZipFile]::CreateFromDirectory($Pkg, $payload, [System.IO.Compression.CompressionLevel]::Optimal, $false)
+# 묶음은 압축하지 않는다: 압축한 큰 묶음을 품은 서명 없는 실행기를 Windows 보안(Defender)의 기계학습 판정이
+# 트로이목마(Trojan:Win32/Sabsik.FL.A!ml)로 오탐했다 (1.0, 압축 32MB → 탐지 / 압축 안 함 85MB → 깨끗)
+[System.IO.Compression.ZipFile]::CreateFromDirectory($Pkg, $payload, [System.IO.Compression.CompressionLevel]::NoCompression, $false)
 $entries = foreach ($f in (Get-ChildItem $Pkg -Recurse -File | Sort-Object FullName)) {
   [ordered]@{ path = $f.FullName.Substring($Pkg.Length + 1).Replace('\', '/'); size = $f.Length; sha256 = (Get-FileHash $f.FullName -Algorithm SHA256).Hash.ToLower() }
 }
@@ -204,10 +206,8 @@ try {
   Pop-Location
   Remove-Item Env:\TN_PAYLOAD, Env:\TN_MANIFEST -ErrorAction SilentlyContinue
 }
-# 파일 이름: 교무수첩(버전).exe — 버전은 화면 표시와 같이 "0.6.1" → "0.61", "0.6.0" → "0.6"
-$vp = $appVersion.Split('.')
-$dispVersion = if ($vp.Count -ge 3 -and $vp[2] -ne '0') { "$($vp[0]).$($vp[1])$($vp[2])" } else { "$($vp[0]).$($vp[1])" }
-$singleName = "교무수첩($dispVersion).exe"
+# 파일 이름: 교무수첩_버전.exe — 프로그램 버전 그대로 (예: 교무수첩_1.0.0.exe)
+$singleName = "교무수첩_$appVersion.exe"
 $single = Join-Path $OutRoot $singleName
 Copy-Item (Join-Path $Root "launcher\target\$Target\release\TeacherNotebook.exe") $single -Force
 Remove-Item -Recurse -Force $work
@@ -251,4 +251,20 @@ try {
 } finally {
   Remove-Item -Recurse -Force $sroot -ErrorAction SilentlyContinue
 }
+Step '10. Windows 보안(Defender) 검사 — 격리하지 않고 검사만'
+# 내려받은 사람의 PC에서 막히지 않는지 미리 본다. 탐지되면 배포하지 말고 원인을 찾는다.
+$mp = Join-Path $env:ProgramFiles 'Windows Defender\MpCmdRun.exe'
+if (Test-Path $mp) {
+  foreach ($f in @($single, $Zip, (Join-Path $Pkg 'TeacherNotebook.exe'))) {
+    $out = & $mp -Scan -ScanType 3 -File $f -DisableRemediation 2>&1 | Out-String
+    if ($LASTEXITCODE -eq 2) {
+      $name = (($out -split "`n") | Where-Object { $_ -match '^Threat\s' }) -join ' '
+      throw "Windows 보안이 $(Split-Path $f -Leaf) 을(를) 위협으로 판정했습니다: $($name.Trim())"
+    }
+    Write-Host "깨끗함: $(Split-Path $f -Leaf)"
+  }
+} else {
+  Write-Warning 'Windows 보안 검사 도구(MpCmdRun.exe)가 없어 검사를 건너뜁니다.'
+}
+
 Write-Host "`n완료: $Zip`n      $single" -ForegroundColor Green

@@ -18,6 +18,7 @@ import {
 } from "./components/Icons";
 import { ConfirmHost, Modal } from "./components/Modal";
 import { QuickCapture } from "./components/QuickCapture";
+import { badgeText } from "./lib/seen";
 import { useLoad, useStore, type PageId } from "./lib/store";
 import { CalendarPage } from "./pages/CalendarPage";
 import { DutiesPage } from "./pages/DutiesPage";
@@ -36,9 +37,9 @@ const MENU: Array<{ id: PageId; label: string; icon: ReactNode }> = [
   { id: "calendar", label: "일정표", icon: <IconCalendar /> },
   { id: "timetable", label: "시간표", icon: <IconTimetable /> },
   { id: "notes", label: "기록", icon: <IconNote /> },
-  { id: "students", label: "학생", icon: <IconStudents /> },
+  { id: "students", label: "학생 명렬표", icon: <IconStudents /> },
   { id: "records", label: "학생부 자료", icon: <IconRecords /> },
-  { id: "duties", label: "업무", icon: <IconDuty /> },
+  { id: "duties", label: "교무 업무", icon: <IconDuty /> },
   { id: "tasks", label: "할 일", icon: <IconTask /> },
   { id: "search", label: "검색", icon: <IconSearch /> },
   { id: "settings", label: "설정", icon: <IconSettings /> },
@@ -168,20 +169,43 @@ function UpdateLog() {
         <IconHistory size={14} /> 업데이트 기록 <b>v{v}</b>
       </button>
       {open && (
-        <Modal title={`업데이트 기록 — 지금 버전 ${v}`} onClose={() => setOpen(false)}>
-          <p className="hint">기능이 늘면 소수점 첫째 자리(0.1 → 0.2), 오류만 고치면 소수점 둘째 자리(0.2 → 0.21)가 올라갑니다.</p>
+        <Modal title={`업데이트 기록 — 지금 버전 v${v}`} onClose={() => setOpen(false)}>
           <ol className="changelog">
             {CHANGELOG.map((c) => (
               <li key={c.version}>
                 <div className="cl-head">
-                  <b>v{c.version}</b> <span className={`tag ${c.kind === "feature" ? "ok" : "warn"}`}>{c.kind === "feature" ? "기능 추가" : "오류 수정"}</span>{" "}
-                  <span className="muted small">{c.date}</span>
+                  <b>로컬 AI 교무수첩 v{c.version}</b> <span className="muted small">{c.date}</span>
                 </div>
-                <ul>
-                  {c.items.map((it, i) => (
-                    <li key={i}>{it}</li>
-                  ))}
-                </ul>
+                {c.summary && <p className="cl-summary">{c.summary}</p>}
+                {c.sections && (
+                  <ul className="cl-sections">
+                    {c.sections.map((sec) => (
+                      <li key={sec.title}>
+                        <b>{sec.title}:</b> {sec.text}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {c.features && c.features.length > 0 && (
+                  <>
+                    <h4 className="cl-kind">새 기능</h4>
+                    <ul>
+                      {c.features.map((it, i) => (
+                        <li key={i}>{it}</li>
+                      ))}
+                    </ul>
+                  </>
+                )}
+                {c.fixes && c.fixes.length > 0 && (
+                  <>
+                    <h4 className="cl-kind">고친 점</h4>
+                    <ul>
+                      {c.fixes.map((it, i) => (
+                        <li key={i}>{it}</li>
+                      ))}
+                    </ul>
+                  </>
+                )}
               </li>
             ))}
           </ol>
@@ -223,8 +247,24 @@ function RestoreNotice() {
 function Badges({ page }: { page: PageId }) {
   const ov = useLoad(() => api.today(), []);
   if (!ov.data) return null;
-  if (page === "notes" && ov.data.unclassified_count > 0) return <span className="nav-badge">{ov.data.unclassified_count}</span>;
+  // 기록: 정리 중·미분류 + 교사가 답해야 할 것(특이사항 '어디에 둘까요?'·개인정보 확인)
+  const notesCount = ov.data.unclassified_count + (ov.data.needs_answer_count ?? 0);
+  if (page === "notes" && notesCount > 0)
+    return (
+      <span className="nav-badge pending" title={`정리 중·미분류 ${ov.data.unclassified_count} · 확인 필요 ${ov.data.needs_answer_count ?? 0}`}>
+        {badgeText(notesCount)}
+      </span>
+    );
   if (page === "today" && ov.data.overdue.length > 0) return <span className="nav-badge danger">{ov.data.overdue.length}</span>;
+  // 새로 정리된 항목: 초록 동그라미 숫자 (그 메뉴를 열면 사라짐)
+  const menu = page === "records" ? "records" : page === "duties" ? "duties" : page === "tasks" ? "tasks" : page === "students" ? "students" : null;
+  const n = menu && ov.data.new_counts ? ov.data.new_counts[menu] : 0;
+  if (n > 0)
+    return (
+      <span className="nav-badge new" title={`새로 정리된 항목 ${n}개 — 열어서 확인하면 사라집니다`}>
+        {badgeText(n)}
+      </span>
+    );
   return null;
 }
 
@@ -250,7 +290,7 @@ export function App() {
               <button className={page === m.id ? "on" : ""} onClick={() => navigate(m.id)} aria-current={page === m.id ? "page" : undefined}>
                 {m.icon}
                 <span className="grow">{m.label}</span>
-                {(m.id === "notes" || m.id === "today") && <Badges page={m.id} />}
+                {["notes", "today", "records", "duties", "tasks", "students"].includes(m.id) && <Badges page={m.id} />}
               </button>
             </li>
           ))}

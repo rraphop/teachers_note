@@ -298,7 +298,7 @@ try {
   await app.evaluate(`document.querySelector('.update-log-btn').click()`);
   await waitFor(() => app.evaluate(`!!document.querySelector('.changelog')`), { label: "업데이트 기록" });
   const log = await app.text(".dialog");
-  check("업데이트 기록: v0.8", log.includes("v0.8") && log.includes("급식") && log.includes("학사력") && log.includes("색칠"), "");
+  check("업데이트 기록: v1.0 기능 소개 (급식·학사력·시간표 색)", log.includes("v1.0") && log.includes("급식") && log.includes("학사력") && log.includes("색 지정"), "");
 } catch (e) {
   check("E2E 실행", false, e instanceof Error ? e.stack ?? e.message : String(e));
 } finally {

@@ -3,8 +3,8 @@ import type { Area, ItemKind, NoteStatus } from "../types";
 /** 관찰 기록 영역 (학생 상세·수정 창). 학생부 자료 화면의 탭 7개는 RECORD_TABS */
 export const AREA_ORDER: Area[] = ["attendance", "subject", "autonomous", "career", "volunteer", "club", "behavior", "free_semester", "daily"];
 
-/** 학생부 자료 영역 7개 (창체 자율·자치, 교과, 행특, 동아리, 진로, 자유학기, 일상생활) */
-export const RECORD_TABS: Area[] = ["autonomous", "subject", "behavior", "club", "career", "free_semester", "daily"];
+/** 학생부 자료 영역 탭 (학생부 순서: 출결, 창체 자율·자치, 교과, 행특, 동아리, 진로, 자유학기, 일상생활) */
+export const RECORD_TABS: Area[] = ["attendance", "autonomous", "subject", "behavior", "club", "career", "free_semester", "daily"];
 
 export const AREA_LABEL: Record<Area, string> = {
   attendance: "출결특기사항",

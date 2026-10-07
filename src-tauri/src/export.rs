@@ -79,6 +79,9 @@ pub struct ExportOptions {
     /// 이 학년도(3월 1일 ~ 다음 해 2월 말) 자료만 — 학년도 마감 기록물용. 보관 처리한 학생도 포함한다.
     #[serde(default)]
     pub school_year: Option<i32>,
+    /// 명렬표를 이 학생들로 좁힌다 (학생 명렬표에서 찾은 결과)
+    #[serde(default)]
+    pub student_ids: Option<Vec<i64>>,
 }
 
 /// 학년도 범위 [시작, 끝) — 'YYYY-MM-DD…' 문자열 비교용
@@ -274,28 +277,35 @@ fn roster(conn: &Connection, o: &ExportOptions) -> AppResult<Table> {
         (cols.prev_record, "이전학적", 14.0, false),
         (cols.remark, "비고", 20.0, true),
     ];
+    // 보호자 연락처는 1~4 를 따로 열로 (관계 + 번호)
+    const GUARDIAN_COLS: [&str; 4] = ["보호자 연락처1", "보호자 연락처2", "보호자 연락처3", "보호자 연락처4"];
     let mut columns = vec![("학급", 8.0, false), ("번호", 6.0, false), ("이름", 12.0, false)];
-    columns.extend(optional.iter().filter(|c| c.0).map(|c| (c.1, c.2, c.3)));
+    for c in optional.iter().filter(|c| c.0) {
+        if c.1 == "보호자 연락처" {
+            columns.extend(GUARDIAN_COLS.iter().map(|g| (*g, 18.0, false)));
+        } else {
+            columns.push((c.1, c.2, c.3));
+        }
+    }
     columns.push(("관찰 기록 수", 10.0, false));
+    let mut contacts = crate::profile::all_contacts(conn)?;
 
     let sql = format!(
         "SELECT COALESCE(c.label,''), s.number, s.name, s.phone, s.guardian_phone, s.address, s.gender, COALESCE(s.birthday,''), s.memo,
-                (SELECT COUNT(*) FROM observations ob WHERE ob.student_id = s.id), s.student_no, s.prev_record, s.remark
+                (SELECT COUNT(*) FROM observations ob WHERE ob.student_id = s.id), s.student_no, s.prev_record, s.remark, s.id
          FROM students s LEFT JOIN classes c ON c.id = s.class_id
          WHERE ((?2 IS NULL AND s.archived = 0) OR c.school_year = ?2) AND (?1 IS NULL OR s.class_id = ?1)
+           AND (?3 IS NULL OR instr(?3, ',' || s.id || ',') > 0)
          ORDER BY {CLASS_ORDER}"
     );
+    let only: Option<String> = o.student_ids.as_ref().map(|ids| format!(",{},", ids.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",")));
     let mut st = conn.prepare(&sql)?;
-    let rows = st
-        .query_map(params![o.class_id, o.school_year], |r| {
+    let raw = st
+        .query_map(params![o.class_id, o.school_year, only], |r| {
             let phone: String = r.get(3)?;
             let guardian: String = r.get(4)?;
             let address: String = r.get(5)?;
-            let (phone, guardian, address) = if o.mask_contacts {
-                (mask_contact(&phone, false), mask_contact(&guardian, false), mask_contact(&address, true))
-            } else {
-                (phone, guardian, address)
-            };
+            let (phone, address) = if o.mask_contacts { (mask_contact(&phone, false), mask_contact(&address, true)) } else { (phone, address) };
             let birthday: String = r.get(7)?;
             let values = [
                 Value::text(phone),
@@ -308,12 +318,36 @@ fn roster(conn: &Connection, o: &ExportOptions) -> AppResult<Table> {
                 Value::text(r.get::<_, String>(11)?),
                 Value::text(r.get::<_, String>(12)?),
             ];
-            let mut row = vec![Value::text(r.get::<_, String>(0)?), Value::opt_int(r.get(1)?), Value::text(r.get::<_, String>(2)?)];
-            row.extend(optional.iter().zip(values).filter(|(c, _)| c.0).map(|(_, v)| v));
-            row.push(Value::Int(r.get(9)?));
-            Ok(row)
+            let head = vec![Value::text(r.get::<_, String>(0)?), Value::opt_int(r.get(1)?), Value::text(r.get::<_, String>(2)?)];
+            Ok((r.get::<_, i64>(13)?, head, values, r.get::<_, i64>(9)?))
         })?
         .collect::<Result<Vec<_>, _>>()?;
+    let mut rows = Vec::new();
+    for (sid, head, values, obs) in raw {
+        let mut row = head;
+        for (c, v) in optional.iter().zip(values) {
+            if !c.0 {
+                continue;
+            }
+            if c.1 == "보호자 연락처" {
+                let list = contacts.remove(&sid).unwrap_or_default();
+                for i in 0..4 {
+                    let cell = list
+                        .get(i)
+                        .map(|x| {
+                            let phone = if o.mask_contacts { mask_contact(&x.phone, false) } else { x.phone.clone() };
+                            format!("{} {}", x.relation, phone).trim().to_string()
+                        })
+                        .unwrap_or_default();
+                    row.push(Value::text(cell));
+                }
+            } else {
+                row.push(v);
+            }
+        }
+        row.push(Value::Int(obs));
+        rows.push(row);
+    }
     Ok(Table { sheet: Sheet::Roster, columns, rows })
 }
 
@@ -815,7 +849,7 @@ mod tests {
     }
 
     fn opts(sheets: Vec<Sheet>) -> ExportOptions {
-        ExportOptions { format: Format::Csv, path: String::new(), sheets, class_id: None, mask_contacts: false, roster_columns: None, school_year: None }
+        ExportOptions { format: Format::Csv, path: String::new(), sheets, class_id: None, mask_contacts: false, roster_columns: None, school_year: None, student_ids: None }
     }
 
     #[test]
@@ -873,17 +907,36 @@ mod tests {
     fn roster_all_columns_order_and_mask() {
         let db = Db::open_in_memory().unwrap();
         seed(&db);
+        // 보호자 연락처는 관계 + 번호로 1~4 열
+        db.with(|c| {
+            let sid: i64 = c.query_row("SELECT id FROM students WHERE name='홍길동'", [], |r| r.get(0))?;
+            crate::profile::set_contacts(
+                c,
+                sid,
+                &[
+                    crate::profile::Contact { id: 0, relation: "모".into(), phone: "010-9876-5432".into() },
+                    crate::profile::Contact { id: 0, relation: "부".into(), phone: "010-1111-2222".into() },
+                ],
+                crate::util::parse_dt("2026-09-29T10:00:00").unwrap(),
+            )?;
+            Ok(())
+        })
+        .unwrap();
         let t = db.with(|c| roster(c, &opts(vec![Sheet::Roster]))).unwrap();
         let heads: Vec<&str> = t.columns.iter().map(|c| c.0).collect();
         assert_eq!(
             heads,
-            ["학급", "번호", "이름", "전화번호", "보호자 연락처", "주소", "성별", "생일", "특이사항", "학생개인번호", "이전학적", "비고", "관찰 기록 수"]
+            [
+                "학급", "번호", "이름", "전화번호", "보호자 연락처1", "보호자 연락처2", "보호자 연락처3", "보호자 연락처4", "주소", "성별", "생일", "특이사항", "학생개인번호",
+                "이전학적", "비고", "관찰 기록 수"
+            ]
         );
         assert_eq!(t.rows.len(), 3);
         assert_eq!(t.rows[0][2], Value::text("홍길동"));
         assert_eq!(t.rows[0][3], Value::text("010-1234-5678"));
-        assert_eq!(t.rows[0][7], Value::text("3월 5일"));
-        assert_eq!(t.rows[0][12], Value::Int(1));
+        assert_eq!((&t.rows[0][4], &t.rows[0][5], &t.rows[0][6]), (&Value::text("모 010-9876-5432"), &Value::text("부 010-1111-2222"), &Value::text("")));
+        assert_eq!(t.rows[0][10], Value::text("3월 5일"));
+        assert_eq!(t.rows[0][15], Value::Int(1));
         // 학급 순서: 2-1 두 명 뒤에 2-2
         assert_eq!(t.rows[2][0], Value::text("2-2"));
 
@@ -897,6 +950,10 @@ mod tests {
         assert_eq!(t.rows.len(), 2);
         assert_eq!(t.rows[0][3], Value::text("●●●-●●●●-5678"));
         assert_eq!(t.rows[1][4], Value::text("2012-11-20"));
+        // 가리기: 보호자 연락처도 뒤 4자리만
+        o.roster_columns = Some(RosterColumns { guardian_phone: true, ..Default::default() });
+        let t = db.with(|c| roster(c, &o)).unwrap();
+        assert_eq!(t.rows[0][3], Value::text("모 ●●●-●●●●-5432"));
     }
 
     #[test]

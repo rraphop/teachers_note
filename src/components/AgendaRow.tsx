@@ -8,7 +8,7 @@ import { openEditor } from "./Editors";
 import { IconBell, IconBellOff, IconEdit } from "./Icons";
 
 /** 할 일·업무·일정 한 줄: 완료 체크, 날짜, 알림, 수정 */
-export function AgendaRow({ item, showDate = true }: { item: AgendaItem; showDate?: boolean }) {
+export function AgendaRow({ item, showDate = true, isNew = false }: { item: AgendaItem; showDate?: boolean; isNew?: boolean }) {
   const { toast, bump } = useStore();
   const today = todayISO();
   const overdue = !!item.date && item.date < today && !item.done && item.kind !== "event";
@@ -37,7 +37,10 @@ export function AgendaRow({ item, showDate = true }: { item: AgendaItem; showDat
         />
       )}
       <button className="agenda-main" onClick={edit} title="눌러서 수정">
-        <span className="agenda-title">{item.title}</span>
+        <span className="agenda-title">
+          {isNew && <span className="new-tag">새</span>}
+          {item.title}
+        </span>
         {item.memo && <span className="agenda-memo">{item.memo}</span>}
         <span className="agenda-meta">
           {item.kind === "duty_log" && <span className="tag duty">업무</span>}

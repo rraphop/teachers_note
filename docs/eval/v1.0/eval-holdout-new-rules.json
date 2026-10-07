@@ -1,0 +1,584 @@
+{
+  "implementation": "new",
+  "mode": "rules",
+  "install": null,
+  "engine_start_ms": null,
+  "memory": null,
+  "set": "eval-holdout",
+  "started": "2026-10-06T17:21:52.924Z",
+  "rows": [
+    {
+      "id": "H1",
+      "raw": "3-1 김선달 오늘 결석(질병). 보호자 전화 옴.",
+      "status": "rules",
+      "infer_ms": null,
+      "wall_ms": 7,
+      "summary": "3-1 김선달 오늘 결석(질병)",
+      "guard_notes": [],
+      "checks": [
+        {
+          "name": "학생 김선달·attendance",
+          "ok": true,
+          "detail": "김선달:attendance"
+        },
+        {
+          "name": "할 일 없음",
+          "ok": true,
+          "detail": ""
+        }
+      ],
+      "items": [
+        {
+          "kind": "student",
+          "text": "3-1 김선달 오늘 결석(질병)",
+          "area": "attendance",
+          "students": [
+            "김선달"
+          ],
+          "date": "2026-10-07",
+          "time": null,
+          "origin": "rule"
+        }
+      ]
+    },
+    {
+      "id": "H2",
+      "raw": "2-4 박놀부 과학 실험 보고서 완성도 높음.",
+      "status": "rules",
+      "infer_ms": null,
+      "wall_ms": 6,
+      "summary": "2-4 박놀부 과학 실험 보고서 완성도 높음",
+      "guard_notes": [],
+      "checks": [
+        {
+          "name": "학생 박놀부·subject",
+          "ok": true,
+          "detail": "박놀부:subject"
+        },
+        {
+          "name": "출결 아님",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "할 일 없음",
+          "ok": true,
+          "detail": ""
+        }
+      ],
+      "items": [
+        {
+          "kind": "student",
+          "text": "2-4 박놀부 과학 실험 보고서 완성도 높음",
+          "area": "subject",
+          "students": [
+            "박놀부"
+          ],
+          "date": "2026-10-07",
+          "time": null,
+          "origin": "rule"
+        }
+      ]
+    },
+    {
+      "id": "H3",
+      "raw": "다음 달 3일 학부모 총회",
+      "status": "rules",
+      "infer_ms": null,
+      "wall_ms": 8,
+      "summary": "학부모 총회",
+      "guard_notes": [],
+      "checks": [
+        {
+          "name": "할 일 없음",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "일정 '학부모 총회'@2026-11-03",
+          "ok": true,
+          "detail": "학부모 총회@2026-11-03 "
+        }
+      ],
+      "items": [
+        {
+          "kind": "event",
+          "text": "학부모 총회",
+          "area": "none",
+          "students": [],
+          "date": "2026-11-03",
+          "time": null,
+          "origin": "rule"
+        }
+      ]
+    },
+    {
+      "id": "H4",
+      "raw": "내일까지 방과후 신청서 걷기",
+      "status": "rules",
+      "infer_ms": null,
+      "wall_ms": 6,
+      "summary": "방과후 신청서 걷기",
+      "guard_notes": [],
+      "checks": [
+        {
+          "name": "출결 아님",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "할 일 '신청서'@2026-10-08",
+          "ok": true,
+          "detail": "방과후 신청서 걷기@2026-10-08"
+        },
+        {
+          "name": "일정 없음",
+          "ok": true,
+          "detail": ""
+        }
+      ],
+      "items": [
+        {
+          "kind": "task",
+          "text": "방과후 신청서 걷기",
+          "area": "none",
+          "students": [],
+          "date": "2026-10-08",
+          "time": null,
+          "origin": "rule"
+        }
+      ]
+    },
+    {
+      "id": "H5",
+      "raw": "1-2 변학도 친구를 괴롭혀 학교폭력 사안 접수. 금요일 오후 2시 전담기구 회의.",
+      "status": "rules",
+      "infer_ms": null,
+      "wall_ms": 6,
+      "summary": "1-2 변학도 친구를 괴롭혀 학교폭력 사안 접수",
+      "guard_notes": [],
+      "checks": [
+        {
+          "name": "학생 변학도·behavior",
+          "ok": true,
+          "detail": "변학도:behavior"
+        },
+        {
+          "name": "출결 아님",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "일정 '회의'@2026-10-09 14:00",
+          "ok": true,
+          "detail": "전담기구 회의@2026-10-09 14:00"
+        }
+      ],
+      "items": [
+        {
+          "kind": "student",
+          "text": "1-2 변학도 친구를 괴롭혀 학교폭력 사안 접수",
+          "area": "behavior",
+          "students": [
+            "변학도"
+          ],
+          "date": "2026-10-07",
+          "time": null,
+          "origin": "rule"
+        },
+        {
+          "kind": "event",
+          "text": "전담기구 회의",
+          "area": "none",
+          "students": [],
+          "date": "2026-10-09",
+          "time": "14:00",
+          "origin": "rule"
+        }
+      ]
+    },
+    {
+      "id": "H6",
+      "raw": "2-3 성춘향 교외체험학습 신청. 10월 12일부터 3일간.",
+      "status": "rules",
+      "infer_ms": null,
+      "wall_ms": 6,
+      "summary": "2-3 성춘향 교외체험학습 신청",
+      "guard_notes": [],
+      "checks": [
+        {
+          "name": "학생 성춘향·attendance",
+          "ok": true,
+          "detail": "성춘향:attendance"
+        }
+      ],
+      "items": [
+        {
+          "kind": "student",
+          "text": "2-3 성춘향 교외체험학습 신청",
+          "area": "attendance",
+          "students": [
+            "성춘향"
+          ],
+          "date": "2026-10-07",
+          "time": null,
+          "origin": "rule"
+        },
+        {
+          "kind": "event",
+          "text": "3일간",
+          "area": "none",
+          "students": [],
+          "date": "2026-10-12",
+          "time": null,
+          "origin": "rule"
+        }
+      ]
+    },
+    {
+      "id": "H7",
+      "raw": "수업일수 확인해서 학사력에 반영하기.",
+      "status": "rules",
+      "infer_ms": null,
+      "wall_ms": 6,
+      "summary": "수업일수 확인해서 학사력에 반영하기",
+      "guard_notes": [],
+      "checks": [
+        {
+          "name": "출결 아님",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "할 일 '반영'",
+          "ok": true,
+          "detail": "수업일수 확인해서 학사력에 반영하기@-"
+        },
+        {
+          "name": "업무 기록",
+          "ok": true,
+          "detail": ""
+        }
+      ],
+      "items": [
+        {
+          "kind": "task",
+          "text": "수업일수 확인해서 학사력에 반영하기",
+          "area": "none",
+          "students": [],
+          "date": null,
+          "time": null,
+          "origin": "rule"
+        },
+        {
+          "kind": "duty",
+          "text": "수업일수 확인해서 학사력에 반영하기",
+          "area": "none",
+          "students": [],
+          "date": null,
+          "time": null,
+          "origin": "rule"
+        }
+      ]
+    },
+    {
+      "id": "H8",
+      "raw": "2-1 홍길동 영어 발표 때 목소리가 작았지만 끝까지 해냄.",
+      "status": "rules",
+      "infer_ms": null,
+      "wall_ms": 6,
+      "summary": "2-1 홍길동 영어 발표 때 목소리가 작았지만 끝까지 해냄",
+      "guard_notes": [],
+      "checks": [
+        {
+          "name": "학생 홍길동·subject",
+          "ok": true,
+          "detail": "홍길동:subject"
+        },
+        {
+          "name": "출결 아님",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "할 일 없음",
+          "ok": true,
+          "detail": ""
+        }
+      ],
+      "items": [
+        {
+          "kind": "student",
+          "text": "2-1 홍길동 영어 발표 때 목소리가 작았지만 끝까지 해냄",
+          "area": "subject",
+          "students": [
+            "홍길동"
+          ],
+          "date": "2026-10-07",
+          "time": null,
+          "origin": "rule"
+        }
+      ]
+    },
+    {
+      "id": "H9",
+      "raw": "중간고사 문항 출제 원안 10월 7일까지 제출.",
+      "status": "rules",
+      "infer_ms": null,
+      "wall_ms": 7,
+      "summary": "중간고사 문항 출제 원안 10월 7일까지 제출",
+      "guard_notes": [],
+      "checks": [
+        {
+          "name": "할 일 '원안'@2026-10-07",
+          "ok": true,
+          "detail": "중간고사 문항 출제 원안 제출@2026-10-07"
+        },
+        {
+          "name": "일정 없음",
+          "ok": true,
+          "detail": ""
+        }
+      ],
+      "items": [
+        {
+          "kind": "task",
+          "text": "중간고사 문항 출제 원안 제출",
+          "area": "none",
+          "students": [],
+          "date": "2026-10-07",
+          "time": null,
+          "origin": "rule"
+        }
+      ]
+    },
+    {
+      "id": "H10",
+      "raw": "학급 청소 상태 불량. 청소 당번표 다시 만들기.",
+      "status": "rules",
+      "infer_ms": null,
+      "wall_ms": 5,
+      "summary": "학급 청소 상태 불량",
+      "guard_notes": [],
+      "checks": [
+        {
+          "name": "출결 아님",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "할 일 '당번표'",
+          "ok": true,
+          "detail": "청소 당번표 다시 만들기@-"
+        },
+        {
+          "name": "일정 없음",
+          "ok": true,
+          "detail": ""
+        }
+      ],
+      "items": [
+        {
+          "kind": "task",
+          "text": "청소 당번표 다시 만들기",
+          "area": "none",
+          "students": [],
+          "date": null,
+          "time": null,
+          "origin": "rule"
+        }
+      ]
+    },
+    {
+      "id": "H11",
+      "raw": "1-1 전우치 봉사 시간 10시간 채움.",
+      "status": "rules",
+      "infer_ms": null,
+      "wall_ms": 19,
+      "summary": "1-1 전우치 봉사 시간 10시간 채움",
+      "guard_notes": [],
+      "checks": [
+        {
+          "name": "학생 전우치·volunteer",
+          "ok": true,
+          "detail": "전우치:volunteer"
+        },
+        {
+          "name": "출결 아님",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "할 일 없음",
+          "ok": true,
+          "detail": ""
+        }
+      ],
+      "items": [
+        {
+          "kind": "student",
+          "text": "1-1 전우치 봉사 시간 10시간 채움",
+          "area": "volunteer",
+          "students": [
+            "전우치"
+          ],
+          "date": "2026-10-07",
+          "time": null,
+          "origin": "rule"
+        }
+      ]
+    },
+    {
+      "id": "H12",
+      "raw": "3-3 임꺽정 진로체험 보고서 미제출.",
+      "status": "rules",
+      "infer_ms": null,
+      "wall_ms": 6,
+      "summary": "3-3 임꺽정 진로체험 보고서 미제출",
+      "guard_notes": [],
+      "checks": [
+        {
+          "name": "학생 임꺽정·career",
+          "ok": true,
+          "detail": "임꺽정:career"
+        },
+        {
+          "name": "출결 아님",
+          "ok": true,
+          "detail": ""
+        }
+      ],
+      "items": [
+        {
+          "kind": "student",
+          "text": "3-3 임꺽정 진로체험 보고서 미제출",
+          "area": "career",
+          "students": [
+            "임꺽정"
+          ],
+          "date": "2026-10-07",
+          "time": null,
+          "origin": "rule"
+        }
+      ]
+    },
+    {
+      "id": "H13",
+      "raw": "오늘 5교시 전교생 소방 대피 훈련.",
+      "status": "rules",
+      "infer_ms": null,
+      "wall_ms": 5,
+      "summary": "5교시 전교생 소방 대피 훈련",
+      "guard_notes": [],
+      "checks": [
+        {
+          "name": "출결 아님",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "학생 관찰 없음",
+          "ok": true,
+          "detail": "0"
+        },
+        {
+          "name": "일정 '대피 훈련'@2026-10-07",
+          "ok": true,
+          "detail": "5교시 전교생 소방 대피 훈련@2026-10-07 "
+        }
+      ],
+      "items": [
+        {
+          "kind": "event",
+          "text": "5교시 전교생 소방 대피 훈련",
+          "area": "none",
+          "students": [],
+          "date": "2026-10-07",
+          "time": null,
+          "origin": "rule"
+        }
+      ]
+    },
+    {
+      "id": "H14",
+      "raw": "2-2 심학규 3~4교시 결과(보건실).",
+      "status": "rules",
+      "infer_ms": null,
+      "wall_ms": 5,
+      "summary": "2-2 심학규 3~4교시 결과(보건실)",
+      "guard_notes": [],
+      "checks": [
+        {
+          "name": "학생 심학규·attendance",
+          "ok": true,
+          "detail": "심학규:attendance"
+        },
+        {
+          "name": "할 일 없음",
+          "ok": true,
+          "detail": ""
+        }
+      ],
+      "items": [
+        {
+          "kind": "student",
+          "text": "2-2 심학규 3~4교시 결과(보건실)",
+          "area": "attendance",
+          "students": [
+            "심학규"
+          ],
+          "date": "2026-10-07",
+          "time": null,
+          "origin": "rule"
+        }
+      ]
+    },
+    {
+      "id": "H15",
+      "raw": "교장선생님께 학교 설명회 자료 결재 받기.",
+      "status": "rules",
+      "infer_ms": null,
+      "wall_ms": 13,
+      "summary": "교장선생님께 학교 설명회 자료 결재 받기",
+      "guard_notes": [],
+      "checks": [
+        {
+          "name": "출결 아님",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "할 일 '결재'",
+          "ok": true,
+          "detail": "교장선생님께 학교 설명회 자료 결재 받기@-"
+        },
+        {
+          "name": "일정 없음",
+          "ok": true,
+          "detail": ""
+        }
+      ],
+      "items": [
+        {
+          "kind": "task",
+          "text": "교장선생님께 학교 설명회 자료 결재 받기",
+          "area": "none",
+          "students": [],
+          "date": null,
+          "time": null,
+          "origin": "rule"
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "passed": 38,
+    "total": 38,
+    "rate": 100,
+    "perfect_notes": 15,
+    "notes": 15,
+    "avg_infer_ms": null,
+    "max_infer_ms": null,
+    "false_attendance_notes": 0
+  }
+}

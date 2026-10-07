@@ -453,6 +453,78 @@ impl Runtime {
             .ok_or_else(|| RuntimeError::with(FailKind::Request, "빈 응답"))
     }
 
+    /// `chat` 과 같되 답을 조금씩(스트리밍) 받으며, 지금까지 받은 글자 수를 `on_chars` 로 알린다 (AI 정리 진행 표시용)
+    pub fn chat_stream(&self, cfg: &LaunchConfig, mut body: serde_json::Value, timeout: Duration, on_chars: &dyn Fn(usize)) -> Result<String, RuntimeError> {
+        use std::io::BufRead;
+        let _one = self.infer.lock().unwrap_or_else(|e| e.into_inner());
+        let ep = self.ensure_ready(cfg)?;
+        body["stream"] = serde_json::Value::Bool(true);
+        let client = local_client(timeout);
+        let res = client
+            .post(format!("http://127.0.0.1:{}/v1/chat/completions", ep.port))
+            .bearer_auth(&ep.api_key)
+            .json(&body)
+            .send();
+        self.touch();
+        let resp = match res {
+            Ok(r) => r,
+            Err(e) => {
+                let dead = {
+                    let mut g = self.proc.lock().unwrap_or_else(|e| e.into_inner());
+                    match g.as_mut() {
+                        Some(p) => !matches!(p.child.try_wait(), Ok(None)),
+                        None => true,
+                    }
+                };
+                if dead {
+                    let log: Vec<String> = self.log_tail.lock().unwrap_or_else(|e| e.into_inner()).iter().cloned().collect();
+                    let kind = classify_failure(&log, None);
+                    self.stop();
+                    let err = RuntimeError::new(kind);
+                    self.set_state(RuntimeState::Failed { kind, message: err.message.clone() });
+                    return Err(err);
+                }
+                let what = if e.is_timeout() { "응답 시간이 초과되었습니다" } else { "연결 오류" };
+                return Err(RuntimeError::with(FailKind::Request, what));
+            }
+        };
+        let status = resp.status();
+        if !status.is_success() {
+            let v: serde_json::Value = resp.json().unwrap_or_default();
+            let too_long = v.pointer("/error/message").and_then(|m| m.as_str()).is_some_and(|m| m.to_lowercase().contains("context"));
+            let what = if too_long { "기록이 너무 길어 한 번에 처리하지 못했습니다".to_string() } else { format!("HTTP {}", status.as_u16()) };
+            return Err(RuntimeError::with(FailKind::Request, &what));
+        }
+        // 서버가 보내는 줄: "data: {…delta…}" … "data: [DONE]"
+        let mut out = String::new();
+        let mut chars = 0usize;
+        for line in std::io::BufReader::new(resp).lines() {
+            let line = line.map_err(|e| {
+                if e.kind() == std::io::ErrorKind::TimedOut {
+                    RuntimeError::with(FailKind::Request, "응답 시간이 초과되었습니다")
+                } else {
+                    RuntimeError::with(FailKind::Request, "응답을 읽다 끊겼습니다")
+                }
+            })?;
+            let Some(data) = line.trim().strip_prefix("data:") else { continue };
+            let data = data.trim();
+            if data == "[DONE]" {
+                break;
+            }
+            let Ok(v) = serde_json::from_str::<serde_json::Value>(data) else { continue };
+            if let Some(piece) = v.pointer("/choices/0/delta/content").and_then(|c| c.as_str()) {
+                out.push_str(piece);
+                chars += piece.chars().count();
+                on_chars(chars);
+            }
+            self.touch();
+        }
+        if out.trim().is_empty() {
+            return Err(RuntimeError::with(FailKind::Request, "빈 응답"));
+        }
+        Ok(out)
+    }
+
     pub fn stop(&self) {
         let taken = self.proc.lock().unwrap_or_else(|e| e.into_inner()).take();
         if let Some(mut p) = taken {
