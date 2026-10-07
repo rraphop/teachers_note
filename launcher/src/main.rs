@@ -5,7 +5,8 @@
 //!
 //! 1. 안에 든 프로그램 묶음(화면·AI 엔진 llama.cpp·라이선스)의 파일 목록과 SHA-256 을 읽는다.
 //! 2. 더 새로운 버전을 이미 풀어 쓴 적이 있으면(지난 버전 파일을 잘못 켠 경우) 새 버전을 쓰라고 알린다.
-//! 3. %LOCALAPPDATA%\TeacherNotebookV2\program\<버전> 의 파일이 목록과 모두 같으면 바로 실행한다.
+//! 3. %LOCALAPPDATA%\teachers_note\program\<버전> 의 파일이 목록과 모두 같으면 바로 실행한다.
+//!    (1.0 첫 배포의 예전 폴더 TeacherNotebookV2 가 있으면 먼저 이름을 바꿔 옮긴다)
 //!    다르거나 없으면(처음 실행·업데이트 직후·파일 손상) "준비 중" 창을 띄우고 새로 풀어 검사한 뒤 실행한다.
 //! 4. 새 버전을 처음 풀었을 때, 같은 폴더의 지난 버전 파일("교무수첩_0.9.0.exe", 예전 이름 "교무수첩(0.9).exe")을
 //!    휴지통으로 옮길지 묻는다. 같은 버전이라도 예전 이름이면 함께 묻는다.
@@ -51,7 +52,26 @@ fn data_root() -> PathBuf {
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("USERPROFILE").map(|p| PathBuf::from(p).join("AppData").join("Local")))
         .unwrap_or_else(std::env::temp_dir);
-    base.join("TeacherNotebookV2")
+    pick_root(&base)
+}
+
+/// 데이터 폴더 이름 (본체 paths::DATA_DIR_NAME 과 같다)
+const DATA_DIR_NAME: &str = "teachers_note";
+/// 1.0 첫 배포까지 쓰던 이름
+const LEGACY_DIR_NAME: &str = "TeacherNotebookV2";
+
+/// 본체와 같은 규칙: 새 이름 폴더가 있으면 그것, 없고 예전 이름 폴더가 있으면 이름을 바꿔 옮긴다.
+/// 못 바꾸면(예전 버전이 켜져 있는 등) 이번에는 예전 폴더를 그대로 쓴다.
+fn pick_root(base: &Path) -> PathBuf {
+    let new = base.join(DATA_DIR_NAME);
+    let old = base.join(LEGACY_DIR_NAME);
+    if new.exists() || !old.is_dir() {
+        return new;
+    }
+    match std::fs::rename(&old, &new) {
+        Ok(()) => new,
+        Err(_) => old,
+    }
 }
 
 fn rel_path(dir: &Path, rel: &str) -> PathBuf {
@@ -464,6 +484,17 @@ mod tests {
         assert_eq!(file_ver("교무수첩(0.6) - 복사본.exe"), None);
         assert!(file_ver("교무수첩(0.6).exe").unwrap().0 < file_ver("교무수첩(0.61).exe").unwrap().0);
         assert!(file_ver("교무수첩(0.9).exe").unwrap().0 < file_ver("교무수첩_1.0.0.exe").unwrap().0);
+    }
+
+    #[test]
+    fn renames_legacy_data_folder() {
+        let base = std::env::temp_dir().join(format!("tn-launcher-root-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(base.join("TeacherNotebookV2").join("program")).unwrap();
+        assert_eq!(pick_root(&base), base.join("teachers_note"));
+        assert!(base.join("teachers_note").join("program").is_dir() && !base.join("TeacherNotebookV2").exists());
+        assert_eq!(pick_root(&base), base.join("teachers_note"));
+        std::fs::remove_dir_all(&base).unwrap();
     }
 
     #[test]

@@ -120,11 +120,11 @@ mod win {
     }
 
     const RUN_KEY: &str = "Software\\Microsoft\\Windows\\CurrentVersion\\Run";
-    /// 자동 시험(TN_DATA_ROOT 로 따로 만든 데이터 폴더)에서는 실제 시작 프로그램 목록 대신 이 키에 쓴다
+    /// 자동 시험(paths::is_test_run)에서는 실제 시작 프로그램 목록 대신 이 키에 쓴다
     const TEST_RUN_KEY: &str = "Software\\LocalTeacherNotebookV2-Test\\Run";
 
     fn run_key() -> &'static str {
-        if std::env::var_os("TN_DATA_ROOT").is_some_and(|v| !v.is_empty()) { TEST_RUN_KEY } else { RUN_KEY }
+        if crate::paths::is_test_run() { TEST_RUN_KEY } else { RUN_KEY }
     }
 
     pub fn set_autostart(enabled: bool, exe: &std::path::Path) -> Result<(), String> {

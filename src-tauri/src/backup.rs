@@ -359,7 +359,7 @@ mod tests {
     #[test]
     fn restore_replaces_db_and_keeps_before_copy() {
         let dir = tempfile::tempdir().unwrap();
-        let paths = AppPaths::from_root(dir.path().join("TeacherNotebookV2"));
+        let paths = AppPaths::from_root(dir.path().join("teachers_note"));
         paths.ensure().unwrap();
         let backup_name;
         {
@@ -391,7 +391,7 @@ mod tests {
     #[test]
     fn broken_or_foreign_backup_leaves_data_untouched() {
         let dir = tempfile::tempdir().unwrap();
-        let paths = AppPaths::from_root(dir.path().join("TeacherNotebookV2"));
+        let paths = AppPaths::from_root(dir.path().join("teachers_note"));
         paths.ensure().unwrap();
         {
             let db = Db::open(&paths.db_path).unwrap();
@@ -438,7 +438,7 @@ mod tests {
     #[test]
     fn older_version_backup_is_migrated_after_restore() {
         let dir = tempfile::tempdir().unwrap();
-        let paths = AppPaths::from_root(dir.path().join("TeacherNotebookV2"));
+        let paths = AppPaths::from_root(dir.path().join("teachers_note"));
         paths.ensure().unwrap();
         {
             let db = Db::open(&paths.db_path).unwrap();

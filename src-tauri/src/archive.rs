@@ -793,7 +793,7 @@ fn readme(y: i32, now: NaiveDateTime, files: &[ArchiveFile]) -> String {
     }
     s.push_str(
         "\r\n■ 개인정보\r\n  학생 정보가 들어 있는 파일은 학교 개인정보 보호 지침에 따라 안전한 곳에 보관하고,\r\n  보존 기간이 지나면 파기해 주세요. 파일에는 암호가 걸려 있지 않습니다.\r\n\
-         \r\n■ 백업 파일(.db)을 프로그램에서 다시 열려면\r\n  %LOCALAPPDATA%\\TeacherNotebookV2\\backups 폴더에 notebook-20270228-120000-manual.db 처럼\r\n  이름을 바꿔 복사한 뒤, 설정 → 데이터 → 백업 목록에서 [되돌리기]를 누릅니다.\r\n\
+         \r\n■ 백업 파일(.db)을 프로그램에서 다시 열려면\r\n  %LOCALAPPDATA%\\teachers_note\\backups 폴더에 notebook-20270228-120000-manual.db 처럼\r\n  이름을 바꿔 복사한 뒤, 설정 → 데이터 → 백업 목록에서 [되돌리기]를 누릅니다.\r\n\
          \r\n■ 파일이 바뀌지 않았는지 확인\r\n  SHA256SUMS.txt 의 값과 비교합니다. (PowerShell: Get-FileHash \"파일 이름\")\r\n",
     );
     s

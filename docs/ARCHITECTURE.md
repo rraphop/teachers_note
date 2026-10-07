@@ -25,7 +25,7 @@ TeacherNotebook.exe (Tauri 2, Rust)
  └─ SQLite (rusqlite bundled, WAL, FTS5 trigram)
 
 runtime\llama.cpp\  llama-server.exe + DLL (llama.cpp b11000 을 llvm-mingw 로 직접 빌드)
-%LOCALAPPDATA%\TeacherNotebookV2\  data\notebook.db, models\, backups\, rules\, logs\, webview\, settings.json
+%LOCALAPPDATA%\teachers_note\  data\notebook.db, models\, backups\, rules\, logs\, webview\, settings.json
 ```
 
 ## 2. 결정과 이유
@@ -96,7 +96,7 @@ LLVM `libc++.dll`/`libunwind.dll`(Apache-2.0 WITH LLVM-exception, 재배포 가�
 - 다운로드는 Windows 시스템 프록시와 인증서 저장소(schannel)를 쓴다 (학교 SSL 검사 프록시 대응).
 
 ### D9. 데이터 위치와 Portable
-- 사용자 데이터는 `%LOCALAPPDATA%\TeacherNotebookV2` (비교 기간 동안 기존 구현의 `TeacherNotebook` 폴더 보호를 위해 이름을 달리했다. `paths::DATA_DIR_NAME` 한 줄로 명세 경로로 바꿀 수 있다).
+- 사용자 데이터는 `%LOCALAPPDATA%\teachers_note` (저장소 이름과 같게. 기존 구현의 `TeacherNotebook` 폴더와는 따로 있다). 1.0 첫 배포까지는 `TeacherNotebookV2` 였고, 실행기와 본체가 켤 때 새 이름 폴더가 없으면 예전 폴더 이름을 바꿔(같은 드라이브라 한 번에) 옮긴다. 예전 버전이 켜져 있어 못 바꾸면 그때는 예전 폴더를 쓰고 다음에 다시 한다(`paths::pick_root`).
 - 다른 프로그램이 만든 DB가 그 위치에 있으면 열지 않는다(`app_meta` 확인) — 잘못된 마이그레이션으로 기존 데이터를 망가뜨리지 않는다.
 - WAL, `foreign_keys=ON`, busy timeout 5초, `PRAGMA user_version` 마이그레이션, 짧은 쓰기 트랜잭션, 하루 1회 `VACUUM INTO` 자동 백업(14개 보관).
 - 모든 로컬 데이터 삭제: 확인 문구 입력 + Windows 확인 창(백엔드가 직접 띄움) → 표식 파일 → **다음 시작 때 DB를 열기 전에** 허용된 하위 경로만 지운다 (실행 중인 DB 강제 삭제 없음, 루트 밖 경로는 정규화 비교로 차단).
@@ -205,7 +205,7 @@ LLVM `libc++.dll`/`libunwind.dll`(Apache-2.0 WITH LLVM-exception, 재배포 가�
 - **실행기**(`launcher/`)
   - 순수 Rust, `+crt-static`. Windows 시스템 DLL(kernel32·user32·gdi32·UCRT)만 쓴다.
   - 안에 두 가지를 넣는다: 조립한 Portable 폴더 전체를 묶은 ZIP(`include_bytes!`, 1.0부터 압축하지 않음), 파일 목록과 SHA-256(`manifest.json`).
-  - 켤 때 `%LOCALAPPDATA%\TeacherNotebookV2\program\<버전>` 의 모든 파일을 목록과 대조한다(크기 → SHA-256, 약 0.3초).
+  - 켤 때 `%LOCALAPPDATA%\teachers_note\program\<버전>` 의 모든 파일을 목록과 대조한다(크기 → SHA-256, 약 0.3초).
   - 다르거나 없으면 "준비 중" 창을 띄운다. 임시 폴더에 풀고, `enclosed_name` 으로 경로 이탈을 막고, 검사한 뒤 이름을 바꿔 넣는다.
   - 두 번 눌러 동시에 풀면 먼저 끝난 쪽을 쓴다. 지난 버전 폴더는 정리한다(쓰는 중이면 다음에).
   - 본체에 `TN_LAUNCHER`(실행기 경로)를 넘긴다.

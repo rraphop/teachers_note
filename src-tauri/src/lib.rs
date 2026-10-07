@@ -96,7 +96,7 @@ pub fn run() {
     let self_test_out: Option<String> = args.iter().position(|a| a == "--self-test").map(|i| args.get(i + 1).cloned().unwrap_or_default());
     let background = args.iter().any(|a| a == "--background");
 
-    let paths = match paths::AppPaths::resolve() {
+    let (paths, moved_note) = match paths::AppPaths::resolve() {
         Ok(p) => p,
         Err(e) => fatal(&e.to_string()),
     };
@@ -115,6 +115,9 @@ pub fn run() {
     }
     logging::init(paths.logs_dir.clone());
     logging::info(&format!("시작: 버전 {}", env!("CARGO_PKG_VERSION")));
+    if let Some(n) = moved_note {
+        logging::info(&n);
+    }
     // 백업 되돌리기 예약이 있으면 DB 를 열기 전에 바꿔 넣는다 (실패하면 지금 데이터 그대로)
     if let Some(outcome) = backup::perform_restore(&paths) {
         *backup::LAST_RESTORE.lock().unwrap_or_else(|e| e.into_inner()) = Some(outcome);
@@ -136,8 +139,8 @@ pub fn run() {
     let state_slot_setup = state_slot.clone();
 
     // 한 번만 실행: 두 번째로 실행하면 이미 열린 창을 앞으로 가져온다.
-    // 자동 시험(TN_DATA_ROOT 로 따로 만든 데이터 폴더)에서는 교사가 쓰고 있는 창을 건드리지 않도록 끈다.
-    let test_data_root = std::env::var_os("TN_DATA_ROOT").is_some_and(|v| !v.is_empty());
+    // 자동 시험(paths::is_test_run)에서는 교사가 쓰고 있는 창을 건드리지 않도록 끈다.
+    let test_data_root = paths::is_test_run();
     let builder = tauri::Builder::default();
     let builder = if test_data_root {
         builder
@@ -187,8 +190,11 @@ pub fn run() {
             // 알림 발신자 등록 (현재 사용자 레지스트리, 관리자 권한 불필요)
             let icon = state.paths.root.join("app-icon.png");
             let _ = std::fs::write(&icon, APP_ICON_PNG);
-            if let Err(e) = notify::register(Some(&icon)) {
-                logging::warn(&format!("알림 등록 실패: {e}"));
+            // 가짜 LOCALAPPDATA 로 하는 시험(TN_TEST_SANDBOX)에서는 교사 PC 의 알림 등록(아이콘 위치)을 바꾸지 않는다
+            if std::env::var_os("TN_TEST_SANDBOX").is_none_or(|v| v.is_empty()) {
+                if let Err(e) = notify::register(Some(&icon)) {
+                    logging::warn(&format!("알림 등록 실패: {e}"));
+                }
             }
             // 나이스: 학교를 정했으면 하루 한 번 시간표·학사일정을 새로 받고 이번 주 급식을 받아 둔다 (학교 코드만 보낸다)
             if self_test_out.is_none() {

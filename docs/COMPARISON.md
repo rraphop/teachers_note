@@ -9,7 +9,7 @@
 | 구분 | 기존 앱 | V2 1.0 |
 |---|---|---|
 | 배포 형태 | Portable ZIP | 파일 하나(`교무수첩_1.0.0.exe`) + Portable ZIP |
-| 데이터 위치 | `%LOCALAPPDATA%\TeacherNotebook` | `%LOCALAPPDATA%\TeacherNotebookV2` (따로 있어 서로 영향 없음) |
+| 데이터 위치 | `%LOCALAPPDATA%\TeacherNotebook` | `%LOCALAPPDATA%\teachers_note` (따로 있어 서로 영향 없음) |
 | 업데이트 | 새 ZIP 으로 바꾸기 | 새 파일을 옆에 두고 켜면 지난 파일 정리 질문, 데이터 형식 올리기 전 자동 백업 |
 | AI 없이 쓰기 | 원문 저장 + 직접 분류 | 원문 저장 + 규칙 분류(날짜·학생·할 일·업무) + 직접 분류 |
 | AI 모델 설치 | 목록 모델 내려받기(Qwen2.5 0.5B~Qwen3 8B) | 목록 모델 내려받기 + **파일로 설치**(USB 등으로 받은 .gguf) |
