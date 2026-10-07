@@ -2,6 +2,7 @@
   "name": "local-teacher-notebook",
   "private": true,
   "version": "1.0.0",
+  "license": "UNLICENSED",
   "type": "module",
   "description": "로컬 AI 교무수첩 (Local Teacher Notebook)",
   "scripts": {
