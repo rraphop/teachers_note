@@ -297,7 +297,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "teacher-notebook-launcher"
+name = "teachers_note_launcher"
 version = "1.0.0"
 dependencies = [
  "hex",

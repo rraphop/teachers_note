@@ -85,7 +85,10 @@
   2차 수정 전에 AI 가 학생부 자료로 넣은 개인정보를 처음 켤 때 한 번 학생 명렬표로 옮김(`profile::backfill`, 설정 키 profile_backfill_v1, 직접 쓴 관찰은 그대로).
   단위 테스트 170개, E2E v0.2 24/24·2차 56/56, 실제 데이터 복사본으로 옮겨지는 것 확인(복사본은 지움). v0.9 의 '항상 위' 2개는 이번 빌드와 이전 빌드 모두 이 시점 PC 상태에서 창이 맨 위로 바뀌지 않아 실패(앞선 같은 날 실행에서는 40/40) — 사용자가 새 빌드에서 직접 켜 보고 정상 동작 확인(시험 당시 PC 창 상태 탓으로 봄)
 
-- 데이터 폴더 이름을 `%LOCALAPPDATA%	eachers_note` 로 (2026-10-08, 사용자 요청). 실행기·본체가 켤 때 예전 `TeacherNotebookV2` 폴더 이름을 바꿔 옮김(`paths::pick_root`, 못 바꾸면 그때는 예전 폴더). 가짜 LOCALAPPDATA 로 하는 시험용 스위치 `TN_TEST_SANDBOX`(실제 시작 프로그램 목록·켜진 창·알림 등록을 건드리지 않음). 단위 테스트 171개 + 실행기 3개, `run-datadir.mjs` 7/7, 회귀 2차 56/56·v0.8 37/37·v0.7 33/33·v0.5 18/18·v0.3 23/23·v0.2 24/24·AI 없음 23/23. v1.0 45/47·v0.9 38/40 의 실패 4개는 모두 '시험 창이 맨 위로 바뀌지 않음'(항상 위·투명도 화면 비교)으로 이전 빌드에서도 같았고, 사용자가 실제 사용에서 항상 위가 잘 됨을 확인
+- 데이터 폴더 이름을 `%LOCALAPPDATA%\teachers_note` 로 (2026-10-08, 사용자 요청). 실행기·본체가 켤 때 예전 `TeacherNotebookV2` 폴더 이름을 바꿔 옮김(`paths::pick_root`, 못 바꾸면 그때는 예전 폴더). 가짜 LOCALAPPDATA 로 하는 시험용 스위치 `TN_TEST_SANDBOX`(실제 시작 프로그램 목록·켜진 창·알림 등록을 건드리지 않음). 단위 테스트 171개 + 실행기 3개, `run-datadir.mjs` 7/7, 회귀 2차 56/56·v0.8 37/37·v0.7 33/33·v0.5 18/18·v0.3 23/23·v0.2 24/24·AI 없음 23/23. v1.0 45/47·v0.9 38/40 의 실패 4개는 모두 '시험 창이 맨 위로 바뀌지 않음'(항상 위·투명도 화면 비교)으로 이전 빌드에서도 같았고, 사용자가 실제 사용에서 항상 위가 잘 됨을 확인
+
+- 이름 통일 (2026-10-08, 사용자 요청): 내려받는 파일만 한글(`교무수첩_1.0.0.exe`, `교무수첩_1.0.0.zip`), 나머지는 모두 `teachers_note` — 실행 파일 `teachers_note.exe`, 포터블 폴더 `teachers_note`, Rust 패키지·라이브러리·실행기, npm 패키지, 앱 식별자(`kr.local.teachers-note`, DB app_meta `teachers_note`), 알림 발신자(AUMID), 자동 시작 값, 도구 폴더 `teachers_note-tools`, 작업 폴더 `teachers_note`.
+  예전 이름(DB `local-teacher-notebook`, AUMID `LocalTeacherNotebook.V2`, Run 값 `LocalTeacherNotebookV2`)은 켤 때 알아보고 새 이름으로 바꿈. 단위 테스트 172개 + 실행기 3개, `run-datadir.mjs` 8/8, 실제 데이터 복사본에서 폴더·식별자가 바뀌고 기록 수 그대로(복사본은 지움), 회귀 2차 56/56·v0.9 40/40·v0.8 37/37·v0.7 33/33·v0.5 18/18·v0.3 23/23·v0.2 24/24·AI 없음 23/23·v1.0 46/47(항상 위를 켠 직후 맨 위 표시가 늦게 잡힌 1개, 이 날 앞선 실행과 같은 시험 환경 문제)
 
 ## 남은 일
 1. 기존 앱과 같은 입력으로 분류 품질 나란히 재기 — 기존 앱 목록 모델을 내려받아야 함(가장 작은 Qwen2.5 0.5B 491MB, 사용자 확인 필요). 도구: `run-eval-old.mjs`, `old-app-data.ps1`
@@ -93,8 +96,8 @@
 
 ## 다시 시작하는 방법
 ```powershell
-. C:\Users\rraph\Documents\Claude\teacher-notebook-v2-tools\env.ps1
-cd C:\Users\rraph\Documents\Claude\teacher-notebook-v2
+. C:\Users\rraph\Documents\Claude\teachers_note-tools\env.ps1
+cd C:\Users\rraph\Documents\Claude\teachers_note
 powershell -ExecutionPolicy Bypass -File scripts\package-portable.ps1
-node scripts\e2e\run-v03.mjs dist-portable\TeacherNotebook-Portable\TeacherNotebook.exe <시험데이터폴더> docs\screenshots <내보내기폴더>
+node scripts\e2e\run-v03.mjs dist-portable\teachers_note\teachers_note.exe <시험데이터폴더> docs\screenshots <내보내기폴더>
 ```

@@ -3,8 +3,8 @@
 param([string[]]$Models = @('qwen3.5-2b|download', 'qwen3.5-4b|download', 'qwen3-8b|C:\Users\rraph\AppData\Local\TeacherNotebook\models\Qwen3-8B-Q4_K_M.gguf'))
 $ErrorActionPreference = 'Continue'
 $root = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path))
-. (Join-Path (Split-Path -Parent $root) 'teacher-notebook-v2-tools\env.ps1')
-$exe = Join-Path $root 'dist-portable\TeacherNotebook-Portable\TeacherNotebook.exe'
+. (Join-Path (Split-Path -Parent $root) 'teachers_note-tools\env.ps1')
+$exe = Join-Path $root 'dist-portable\teachers_note\teachers_note.exe'
 $log = Join-Path $root 'docs\eval\model-evals.log'
 function Log($m) { $m | Out-File -Append -Encoding utf8 $log; Write-Host $m }
 Log "시작 $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
@@ -17,7 +17,7 @@ foreach ($m in $Models) {
   $t = Get-Date
   node (Join-Path $root 'scripts\e2e\run-eval.mjs') $exe $data (Join-Path $root 'docs\eval') $id $src 2>&1 | ForEach-Object { Log "$_" }
   Log "소요: $([math]::Round(((Get-Date) - $t).TotalMinutes, 1))분"
-  Get-CimInstance Win32_Process | Where-Object { $_.Name -in 'TeacherNotebook.exe', 'llama-server.exe' -and $_.ExecutablePath -like "$root*" } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+  Get-CimInstance Win32_Process | Where-Object { $_.Name -in 'teachers_note.exe', 'llama-server.exe' -and $_.ExecutablePath -like "$root*" } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
   Start-Sleep -Seconds 2
   Remove-Item -Recurse -Force $data -ErrorAction SilentlyContinue
 }

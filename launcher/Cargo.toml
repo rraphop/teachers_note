@@ -1,5 +1,5 @@
 [package]
-name = "teacher-notebook-launcher"
+name = "teachers_note_launcher"
 version = "1.0.0"
 description = "로컬 AI 교무수첩 — 파일 하나 실행기"
 edition = "2024"
@@ -9,7 +9,7 @@ publish = false
 # 바탕화면에 두는 파일 하나. 안에 프로그램 폴더 전체(화면·AI 엔진·라이선스)를 압축해 넣고,
 # 켤 때 사용자 데이터 폴더의 program\<버전> 에 풀어(SHA-256 확인) 실행한다.
 [[bin]]
-name = "TeacherNotebook"
+name = "teachers_note_launcher"
 path = "src/main.rs"
 
 [dependencies]

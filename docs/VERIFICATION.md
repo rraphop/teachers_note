@@ -1,6 +1,6 @@
 # 검증 보고서 — 로컬 AI 교무수첩 1.0.0
 
-검증일: 2026-10-07 (2차 수정목록 반영 2026-10-08) · 대상: `교무수첩_1.0.0.exe`(파일 하나 버전), `TeacherNotebook-Portable-x64.zip`(ZIP 버전)
+검증일: 2026-10-07 (2차 수정목록 반영 2026-10-08) · 대상: `교무수첩_1.0.0.exe`(파일 하나 버전), `교무수첩_1.0.0.zip`(ZIP 버전)
 
 ## 1. 검증 환경
 
@@ -33,12 +33,12 @@
 
 ## 3. 실제 EXE 화면 시험
 
-패키징한 `TeacherNotebook.exe` 를 시험 데이터 폴더로 띄우고 WebView2 디버그 포트(CDP)로 실제 화면을 누르고 읽는다.
+패키징한 `teachers_note.exe` 를 시험 데이터 폴더로 띄우고 WebView2 디버그 포트(CDP)로 실제 화면을 누르고 읽는다.
 
 | 묶음 | 내용 | 결과 |
 |---|---|---|
 | `run-v10b.mjs` (1.0 2차 수정) | 메뉴 이름, 업데이트 기록(v1.0만), 학급명렬표 열 너비(0개·전화번호+비고·전체, 1920·1280px, 가리기)·왼쪽 고정, 이름·학급 찾기(두 보기·학급 표기·강조·Enter·검색 결과 n명), 할 일 폭(1920·2560·760px), 학생부 자료 학급 펼침·출결 탭, 기록 속 개인정보 → 명렬표(주소·전화·보호자 4개·같은 관계·생일·확인·그대로 두기·특이사항 질문·가리기·변경 이력), 새 항목 숫자, Qwen3.5 4B 로 AI 정리 진행 게이지·남은 건수·새 항목 숫자·점·'새' 표시 | 70/70 |
-| `run-datadir.mjs` (데이터 폴더 이름) | 가짜 LOCALAPPDATA 에서 예전 폴더(TeacherNotebookV2)의 기록·학생이 파일 하나 실행기로 켤 때 teachers_note 로 옮겨짐(복사본 없음, 프로그램도 새 폴더에 풀림), 실제 시작 프로그램 목록·실제 데이터 폴더는 그대로 | 7/7 |
+| `run-datadir.mjs` (데이터 폴더 이름) | 가짜 LOCALAPPDATA 에서 예전 폴더(TeacherNotebookV2)의 기록·학생이 파일 하나 실행기로 켤 때 teachers_note 로 옮겨짐(복사본 없음, 프로그램도 새 폴더에 풀림), 자동 시작 값 이름 LocalTeacherNotebookV2 → teachers_note(시험용 키), 실제 시작 프로그램 목록·실제 데이터 폴더는 그대로 | 8/8 |
 | `run-v10.mjs` (1.0) | 오늘 화면 칸 배치(1280·1920·2400·760px 열 수, 오른쪽 빈 곳 없음, 열 바닥 맞춤), 직접 배치(화살표·끌기·열 수·넓게·숨기기·다시 켜도 기억·좁으면 접기), 메모(자동 저장·쓰는 중 화면 갱신에도 유지·색·순서·되돌리기), 창 투명도(알파 값과 화면에서 실제로 섞여 보이는지, 70% 상한, 다시 켜도 유지) | 47/47 |
 | `run-v09.mjs` (0.9) | 오늘 업무 요약, 학생부 자료 영역 7개·최종안·한도, 방과후 요일, 다가오는 일정 색, 학사력 일요일 시작, 자동 실행·항상 위(시험용 레지스트리 키) | 40/40 |
 | `run-v08.mjs` (0.8) | 나이스 학교 찾기·시간표·급식·학사력(시험용 서버, 보낸 값 검사), 시간표 색칠하기 | 37/37 |
@@ -73,7 +73,7 @@
 | 산출물 | 크기 |
 |---|---|
 | `교무수첩_1.0.0.exe` | 84.8MB (처음 실행 때 풀기 약 3초) |
-| `TeacherNotebook-Portable-x64.zip` | 약 31MB |
+| `교무수첩_1.0.0.zip` | 약 31MB |
 
 ## 6. Windows 보안(Defender)
 
@@ -93,11 +93,11 @@
 ## 8. 다시 해 보는 방법
 
 ```powershell
-. C:\Users\rraph\Documents\Claude\teacher-notebook-v2-tools\env.ps1
-cd C:\Users\rraph\Documents\Claude\teacher-notebook-v2
+. C:\Users\rraph\Documents\Claude\teachers_note-tools\env.ps1
+cd C:\Users\rraph\Documents\Claude\teachers_note
 powershell -ExecutionPolicy Bypass -File scripts\package-portable.ps1
 cd src-tauri; cargo test --lib; cd ..
-node scripts\e2e\run-v10.mjs dist-portable\TeacherNotebook-Portable\TeacherNotebook.exe <시험데이터폴더> <캡처폴더>
-node scripts\e2e\run-engine.mjs dist-portable\TeacherNotebook-Portable\TeacherNotebook.exe <시험데이터폴더> <gguf 경로>
+node scripts\e2e\run-v10.mjs dist-portable\teachers_note\teachers_note.exe <시험데이터폴더> <캡처폴더>
+node scripts\e2e\run-engine.mjs dist-portable\teachers_note\teachers_note.exe <시험데이터폴더> <gguf 경로>
 powershell -ExecutionPolicy Bypass -File scripts\e2e\single-update-test.ps1 -Shots <캡처폴더>
 ```

@@ -176,7 +176,7 @@ pub fn inspect_file(path: &Path) -> AppResult<BackupCounts> {
     }
     let app: Option<String> =
         conn.query_row("SELECT value FROM app_meta WHERE key='app'", [], |r| r.get(0)).optional().unwrap_or(None);
-    if app.as_deref() != Some(APP_ID) {
+    if !db::is_our_app(app.as_deref()) {
         return Err(not_ours());
     }
     if version > db::latest_version() {

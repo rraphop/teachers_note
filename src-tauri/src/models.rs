@@ -309,7 +309,7 @@ pub enum Finish {
 /// 네트워크 요청은 학생 정보와 무관한 모델 파일 다운로드뿐이다.
 fn download_client() -> Result<reqwest::blocking::Client, String> {
     reqwest::blocking::Client::builder()
-        .user_agent(concat!("LocalTeacherNotebook/", env!("CARGO_PKG_VERSION")))
+        .user_agent(concat!("teachers_note/", env!("CARGO_PKG_VERSION")))
         .connect_timeout(Duration::from_secs(20))
         .timeout(Duration::from_secs(90))
         .build()

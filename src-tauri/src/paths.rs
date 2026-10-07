@@ -105,7 +105,7 @@ pub fn is_test_run() -> bool {
     ["TN_DATA_ROOT", "TN_TEST_SANDBOX"].iter().any(|k| std::env::var_os(k).is_some_and(|v| !v.is_empty()))
 }
 
-/// 파일 하나 실행기(바탕화면의 TeacherNotebook.exe)로 켰으면 그 파일 위치
+/// 파일 하나 실행기(바탕화면의 교무수첩_버전.exe)로 켰으면 그 파일 위치
 pub fn launcher_path() -> Option<PathBuf> {
     std::env::var_os("TN_LAUNCHER").filter(|v| !v.is_empty()).map(PathBuf::from).filter(|p| p.is_file())
 }

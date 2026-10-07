@@ -480,7 +480,7 @@ mod tests {
         assert_eq!(file_ver("교무수첩(0.61).exe"), Some(((0, 6, 1), true)));
         assert_eq!(file_ver("교무수첩(0.6).exe"), Some(((0, 6, 0), true)));
         assert_eq!(file_ver("교무수첩(1.12).exe"), Some(((1, 1, 2), true)));
-        assert_eq!(file_ver("TeacherNotebook.exe"), None);
+        assert_eq!(file_ver("teachers_note.exe"), None);
         assert_eq!(file_ver("교무수첩(0.6) - 복사본.exe"), None);
         assert!(file_ver("교무수첩(0.6).exe").unwrap().0 < file_ver("교무수첩(0.61).exe").unwrap().0);
         assert!(file_ver("교무수첩(0.9).exe").unwrap().0 < file_ver("교무수첩_1.0.0.exe").unwrap().0);
@@ -501,7 +501,7 @@ mod tests {
     fn finds_only_older_version_files_beside() {
         let dir = std::env::temp_dir().join(format!("tn-launcher-test-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        for n in ["교무수첩(0.9).exe", "교무수첩(1.0).exe", "교무수첩_0.9.0.exe", "교무수첩_1.0.0.exe", "교무수첩_1.1.0.exe", "메모.txt", "TeacherNotebook.exe"] {
+        for n in ["교무수첩(0.9).exe", "교무수첩(1.0).exe", "교무수첩_0.9.0.exe", "교무수첩_1.0.0.exe", "교무수첩_1.1.0.exe", "메모.txt", "teachers_note.exe"] {
             std::fs::write(dir.join(n), b"x").unwrap();
         }
         let me = dir.join("교무수첩_1.0.0.exe");

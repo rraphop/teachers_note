@@ -1,7 +1,7 @@
 // 데이터 폴더 이름 바꾸기 시험: 예전 폴더(TeacherNotebookV2)에 쌓인 기록이 새 이름(teachers_note)으로 옮겨지는지.
 //   가짜 LOCALAPPDATA(임시 폴더)에서 파일 하나 실행기를 켠다. 실제 데이터 폴더·시작 프로그램 목록·켜진 창은 건드리지 않는다
 //   (TN_TEST_SANDBOX). 학생·기록은 가짜다.
-// 실행: node scripts/e2e/run-datadir.mjs <포터블 TeacherNotebook.exe> <교무수첩_버전.exe> <임시 폴더>
+// 실행: node scripts/e2e/run-datadir.mjs <포터블 teachers_note.exe> <교무수첩_버전.exe> <임시 폴더>
 import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
@@ -39,6 +39,16 @@ try {
   // 2. 가짜 LOCALAPPDATA 로 파일 하나 실행기를 켠다 (실제 데이터 폴더 규칙 그대로)
   const env = { ...process.env, LOCALAPPDATA: sandbox, TN_TEST_SANDBOX: "1", TN_TEST_ANSWER: "no", WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: "--remote-debugging-port=9333" };
   delete env.TN_DATA_ROOT;
+  // 1.0 첫 배포의 자동 시작 값 이름(LocalTeacherNotebookV2)이 새 이름(teachers_note)으로 옮겨지는지 — 시험용 키에서만
+  const TEST_KEY = "HKCU\\Software\\teachers_note-Test\\Run";
+  const regQuery = (name) => {
+    try {
+      return execFileSync("reg", ["query", TEST_KEY, "/v", name], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+    } catch {
+      return null;
+    }
+  };
+  execFileSync("reg", ["add", TEST_KEY, "/v", "LocalTeacherNotebookV2", "/d", `"${path.resolve(singleExe)}"`, "/f"], { stdio: "ignore" });
   const launcher = spawn(singleExe, [], { env, detached: false, stdio: "ignore" });
   const app = await connect(9333, 90000);
   try {
@@ -49,9 +59,12 @@ try {
     check("새 이름 폴더(teachers_note)를 씀", path.resolve(info.data_dir).toLowerCase() === path.resolve(fresh).toLowerCase(), info.data_dir);
     check("예전 폴더는 이름이 바뀌어 남지 않음 (복사본 없음)", !fs.existsSync(legacy), "");
     check("기록·학생 그대로", notes.some((n) => n.raw_text === "이름 바꾸기 시험 기록") && students.some((s) => s.name === "홍길동"), `기록 ${notes.length} 학생 ${students.length}`);
-    check("프로그램도 새 폴더에 풀림 (program\\1.0.0)", fs.existsSync(path.join(fresh, "program", info.version, "TeacherNotebook.exe")), "");
+    check("프로그램도 새 폴더에 풀림 (program\\1.0.0)", fs.existsSync(path.join(fresh, "program", info.version, "teachers_note.exe")), "");
     const log = fs.readdirSync(path.join(fresh, "logs")).map((f) => fs.readFileSync(path.join(fresh, "logs", f), "utf8")).join("\n");
     check("실행 기록에 남김 없음 또는 이름 바꿈 기록 (실행기가 먼저 옮김)", !log.includes("바꾸지 못해"), "");
+    await sleep(1500);
+    const moved = regQuery("teachers_note");
+    check("자동 시작 값 이름: LocalTeacherNotebookV2 → teachers_note (명령은 이 파일)", !!moved && moved.includes(".exe") && regQuery("LocalTeacherNotebookV2") === null, (moved ?? "").trim().split("\n").pop());
   } finally {
     app.close();
     launcher.kill();
@@ -64,6 +77,9 @@ try {
   check("데이터 폴더 시험 실행", false, e instanceof Error ? e.stack ?? e.message : String(e));
 } finally {
   killUnder(sandbox);
+  try {
+    execFileSync("reg", ["delete", "HKCU\\Software\\teachers_note-Test", "/f"], { stdio: "ignore" });
+  } catch {}
   await sleep(1000);
   fs.rmSync(sandbox, { recursive: true, force: true });
 }

@@ -1,7 +1,7 @@
 ﻿# llama.cpp 런타임을 src-tauri/runtime/llama.cpp 로 모은다.
 # 직접 빌드한 llama.cpp(llvm-mingw, MSVC 런타임 의존 없음)의 llama-server 와 필요한 DLL만 넣는다.
 param(
-  [string]$ToolsRoot = (Join-Path (Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)) '..\teacher-notebook-v2-tools'),
+  [string]$ToolsRoot = (Join-Path (Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)) '..\teachers_note-tools'),
   [string]$BuildDir = ''
 )
 $ErrorActionPreference = 'Stop'

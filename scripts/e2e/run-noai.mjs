@@ -1,5 +1,5 @@
 // E2E 1단계: AI 모델 없이 (시나리오 E) — 원문 저장, 미분류 이유, 직접 분류, 일정표 반영, 담당업무
-// 실행: node scripts/e2e/run-noai.mjs <TeacherNotebook.exe> <데이터폴더> <스크린샷폴더>
+// 실행: node scripts/e2e/run-noai.mjs <teachers_note.exe> <데이터폴더> <스크린샷폴더>
 import fs from "node:fs/promises";
 import path from "node:path";
 import { connect, launch, sleep, waitFor } from "./cdp.mjs";

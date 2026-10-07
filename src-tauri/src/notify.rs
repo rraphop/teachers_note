@@ -4,9 +4,13 @@
 //! (HKCU\Software\Classes\AppUserModelId)에 등록해야 알림이 표시된다. 관리자 권한은 필요 없다.
 //! 실패하면 Windows 가 알려 준 실제 오류를 그대로 돌려준다.
 
-pub const AUMID: &str = "LocalTeacherNotebook.V2";
+pub const AUMID: &str = "teachers_note";
+/// 1.0 첫 배포까지 쓰던 알림 발신자 이름 (등록할 때 지운다)
+const LEGACY_AUMIDS: [&str; 1] = ["LocalTeacherNotebook.V2"];
 pub const DISPLAY_NAME: &str = "로컬 AI 교무수첩";
-const RUN_VALUE: &str = "LocalTeacherNotebookV2";
+const RUN_VALUE: &str = "teachers_note";
+/// 1.0 첫 배포까지 쓰던 시작 프로그램 값 이름 (켤 때 새 이름으로 옮긴다)
+const LEGACY_RUN_VALUES: [&str; 1] = ["LocalTeacherNotebookV2"];
 
 /// 시작 프로그램에 적는 명령: Windows 에 로그인하면 창을 띄운 채로 켠다
 /// (0.9 이전에는 `--background` 를 붙여 알림 영역에만 켰다 — 프로그램을 켤 때 이 모양으로 고쳐 쓴다)
@@ -65,6 +69,12 @@ mod win {
     }
 
     pub fn register(icon: Option<&std::path::Path>) -> Result<(), String> {
+        for old in LEGACY_AUMIDS {
+            let p = wide(&format!("Software\\Classes\\AppUserModelId\\{old}"));
+            unsafe {
+                let _ = RegDeleteTreeW(HKEY_CURRENT_USER, PCWSTR(p.as_ptr()));
+            }
+        }
         let key = create_key(&format!("Software\\Classes\\AppUserModelId\\{AUMID}"))?;
         let res = (|| {
             set_string(key, "DisplayName", DISPLAY_NAME)?;
@@ -121,13 +131,67 @@ mod win {
 
     const RUN_KEY: &str = "Software\\Microsoft\\Windows\\CurrentVersion\\Run";
     /// 자동 시험(paths::is_test_run)에서는 실제 시작 프로그램 목록 대신 이 키에 쓴다
-    const TEST_RUN_KEY: &str = "Software\\LocalTeacherNotebookV2-Test\\Run";
+    const TEST_RUN_KEY: &str = "Software\\teachers_note-Test\\Run";
 
     fn run_key() -> &'static str {
         if crate::paths::is_test_run() { TEST_RUN_KEY } else { RUN_KEY }
     }
 
+    fn read_value(name: &str) -> Option<String> {
+        let p = wide(run_key());
+        let n = wide(name);
+        let mut key = HKEY::default();
+        unsafe {
+            if RegOpenKeyExW(HKEY_CURRENT_USER, PCWSTR(p.as_ptr()), None, KEY_READ, &mut key) != ERROR_SUCCESS {
+                return None;
+            }
+            let mut buf = vec![0u16; 1024];
+            let mut size = (buf.len() * 2) as u32;
+            let r = RegQueryValueExW(key, PCWSTR(n.as_ptr()), None, None, Some(buf.as_mut_ptr() as *mut u8), Some(&mut size));
+            let _ = RegCloseKey(key);
+            if r != ERROR_SUCCESS {
+                return None;
+            }
+            let len = (size as usize / 2).saturating_sub(1).min(buf.len());
+            Some(String::from_utf16_lossy(&buf[..len]))
+        }
+    }
+
+    fn delete_value(name: &str) {
+        let p = wide(run_key());
+        let mut key = HKEY::default();
+        unsafe {
+            if RegOpenKeyExW(HKEY_CURRENT_USER, PCWSTR(p.as_ptr()), None, KEY_WRITE, &mut key) == ERROR_SUCCESS {
+                let n = wide(name);
+                let _ = RegDeleteValueW(key, PCWSTR(n.as_ptr()));
+                let _ = RegCloseKey(key);
+            }
+        }
+    }
+
+    /// 예전 이름(LocalTeacherNotebookV2)으로 적힌 자동 시작을 새 이름으로 옮긴다 (명령은 그대로)
+    pub fn migrate_autostart_name() {
+        for old in LEGACY_RUN_VALUES {
+            if let Some(cmd) = read_value(old) {
+                if read_value(RUN_VALUE).is_none() {
+                    if let Ok(key) = create_key(run_key()) {
+                        let _ = set_string(key, RUN_VALUE, &cmd);
+                        unsafe {
+                            let _ = RegCloseKey(key);
+                        }
+                    }
+                }
+                if read_value(RUN_VALUE).is_some() {
+                    delete_value(old);
+                }
+            }
+        }
+    }
+
     pub fn set_autostart(enabled: bool, exe: &std::path::Path) -> Result<(), String> {
+        for old in LEGACY_RUN_VALUES {
+            delete_value(old);
+        }
         if enabled {
             let key = create_key(run_key())?;
             let res = set_string(key, RUN_VALUE, &autostart_command(exe));
@@ -150,28 +214,12 @@ mod win {
     }
 
     pub fn autostart_target() -> Option<String> {
-        let p = wide(run_key());
-        let n = wide(RUN_VALUE);
-        let mut key = HKEY::default();
-        unsafe {
-            if RegOpenKeyExW(HKEY_CURRENT_USER, PCWSTR(p.as_ptr()), None, KEY_READ, &mut key) != ERROR_SUCCESS {
-                return None;
-            }
-            let mut buf = vec![0u16; 1024];
-            let mut size = (buf.len() * 2) as u32;
-            let r = RegQueryValueExW(key, PCWSTR(n.as_ptr()), None, None, Some(buf.as_mut_ptr() as *mut u8), Some(&mut size));
-            let _ = RegCloseKey(key);
-            if r != ERROR_SUCCESS {
-                return None;
-            }
-            let len = (size as usize / 2).saturating_sub(1).min(buf.len());
-            Some(String::from_utf16_lossy(&buf[..len]))
-        }
+        read_value(RUN_VALUE)
     }
 }
 
 #[cfg(windows)]
-pub use win::{autostart_target, register, set_autostart, show, unregister};
+pub use win::{autostart_target, migrate_autostart_name, register, set_autostart, show, unregister};
 
 #[cfg(not(windows))]
 pub fn register(_icon: Option<&std::path::Path>) -> Result<(), String> {
@@ -191,6 +239,8 @@ pub fn set_autostart(_e: bool, _p: &std::path::Path) -> Result<(), String> {
 pub fn autostart_target() -> Option<String> {
     None
 }
+#[cfg(not(windows))]
+pub fn migrate_autostart_name() {}
 
 #[cfg(test)]
 mod tests {
@@ -207,6 +257,6 @@ mod tests {
         assert_eq!(super::autostart_exe(&super::autostart_command(exe)), exe.display().to_string());
         // 예전 모양(알림 영역에만 켜기)도 경로를 읽는다
         assert_eq!(super::autostart_exe(r#""C:\a b\교무수첩_0.9.0.exe" --background"#), r"C:\a b\교무수첩_0.9.0.exe");
-        assert_eq!(super::autostart_exe(r"C:\a\TeacherNotebook.exe --background"), r"C:\a\TeacherNotebook.exe");
+        assert_eq!(super::autostart_exe(r"C:\a\teachers_note.exe --background"), r"C:\a\teachers_note.exe");
     }
 }

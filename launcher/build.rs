@@ -23,7 +23,7 @@ fn main() {
         res.set_icon("../src-tauri/icons/icon.ico");
         res.set("FileDescription", "로컬 AI 교무수첩");
         res.set("ProductName", "로컬 AI 교무수첩");
-        res.set("OriginalFilename", "TeacherNotebook.exe");
+        res.set("OriginalFilename", "교무수첩.exe");
         res.set("LegalCopyright", "Copyright (c) 2026 차일영. All rights reserved.");
         res.set("CompanyName", "차일영");
         res.set_manifest(MANIFEST);

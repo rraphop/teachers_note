@@ -144,7 +144,7 @@ try {
   if (runtimePid) metrics.memory_llama_server = memOf(runtimePid);
   metrics.memory_app = (() => {
     try {
-      const out = ps(`$p = Get-Process TeacherNotebook -ErrorAction Stop | Select-Object -First 1; '{0},{1}' -f $p.WorkingSet64, $p.PrivateMemorySize64`);
+      const out = ps(`$p = Get-Process teachers_note -ErrorAction Stop | Select-Object -First 1; '{0},{1}' -f $p.WorkingSet64, $p.PrivateMemorySize64`);
       const [ws, pr] = out.split(",").map(Number);
       return { working_set_mb: Math.round(ws / 1048576), private_mb: Math.round(pr / 1048576) };
     } catch {

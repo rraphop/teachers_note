@@ -1,5 +1,5 @@
 [package]
-name = "teacher-notebook"
+name = "teachers_note"
 version = "1.0.0"
 description = "로컬 AI 교무수첩 (Local Teacher Notebook)"
 edition = "2024"
@@ -7,11 +7,11 @@ rust-version = "1.92"
 publish = false
 
 [[bin]]
-name = "TeacherNotebook"
+name = "teachers_note"
 path = "src/main.rs"
 
 [lib]
-name = "teacher_notebook_lib"
+name = "teachers_note_lib"
 path = "src/lib.rs"
 
 [build-dependencies]

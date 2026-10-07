@@ -8,7 +8,7 @@
 | 파일 | 설명 |
 |---|---|
 | **교무수첩_1.0.0.exe** (89MB, 권장) | 파일 하나 버전. 바탕화면 등에 두고 실행하면 됩니다. 설치·관리자 권한이 필요 없습니다. |
-| **TeacherNotebook-Portable-x64.zip** (33MB) | 압축을 풀어 `TeacherNotebook.exe` 를 실행하는 버전. 파일 하나 버전이 백신에 막힐 때 쓰세요. |
+| **교무수첩_1.0.0.zip** (33MB) | 압축을 풀면 나오는 `teachers_note` 폴더의 `teachers_note.exe` 를 실행하는 버전. 파일 하나 버전이 백신에 막힐 때 쓰세요. |
 
 - Windows 10/11 x64 전용입니다.
 - 처음 실행할 때 "Windows의 PC 보호" 창이 뜨면 [추가 정보] → [실행]을 누르세요. 코드 서명이 없는 프로그램이라 뜹니다.
@@ -53,5 +53,5 @@
 
 | 파일 | SHA-256 |
 |---|---|
-| 교무수첩_1.0.0.exe | `8d19af5a566601062ad56e7d91685dac9a5925a89010b5176026ea6d0982cae8` |
-| TeacherNotebook-Portable-x64.zip | `4762b5ea6d98ee5d37ea84f09827dc0c7fe90264f160af2865e3f1f7e54f0dcb` |
+| 교무수첩_1.0.0.exe | `93b25c1ba7895f17c3d3c4e004d3091072679536f986d532c9af84b9e923d7f8` |
+| 교무수첩_1.0.0.zip | `508a64e5d00a896e1bacb9e85bdeb888be0f6f4a5f32948e342e05e1ce6d5a85` |

@@ -1,9 +1,9 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "로컬 AI 교무수첩",
-  "mainBinaryName": "TeacherNotebook",
+  "mainBinaryName": "teachers_note",
   "version": "1.0.0",
-  "identifier": "kr.local.teachernotebook.v2",
+  "identifier": "kr.local.teachers-note",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://127.0.0.1:5173",

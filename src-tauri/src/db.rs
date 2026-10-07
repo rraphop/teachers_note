@@ -6,7 +6,14 @@ use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
 use std::path::Path;
 use std::sync::{Mutex, MutexGuard};
 
-pub const APP_ID: &str = "local-teacher-notebook";
+pub const APP_ID: &str = "teachers_note";
+/// 1.0 첫 배포까지 DB 에 적던 앱 식별자 (열 때 새 값으로 바꾼다)
+pub const LEGACY_APP_IDS: [&str; 1] = ["local-teacher-notebook"];
+
+/// 이 프로그램이 만든 DB 인가 (예전 식별자 포함)
+pub fn is_our_app(app: Option<&str>) -> bool {
+    app.is_some_and(|a| a == APP_ID || LEGACY_APP_IDS.contains(&a))
+}
 
 /// (버전, SQL). 새 마이그레이션은 끝에 추가만 한다.
 const MIGRATIONS: &[(i64, &str)] = &[
@@ -118,7 +125,7 @@ pub fn migrate(conn: &Connection) -> AppResult<()> {
             .query_row("SELECT value FROM app_meta WHERE key='app'", [], |r| r.get(0))
             .optional()
             .unwrap_or(None);
-        if app.as_deref() != Some(APP_ID) {
+        if !is_our_app(app.as_deref()) {
             return Err(AppError::msg(
                 "데이터 폴더에 다른 프로그램의 데이터베이스가 있습니다. 기존 파일을 보호하기 위해 열지 않았습니다.",
             ));
@@ -127,6 +134,9 @@ pub fn migrate(conn: &Connection) -> AppResult<()> {
             return Err(AppError::msg(
                 "더 새로운 버전의 교무수첩에서 만든 데이터입니다. 최신 버전 프로그램으로 실행해 주세요.",
             ));
+        }
+        if app.as_deref() != Some(APP_ID) {
+            conn.execute("UPDATE app_meta SET value=?1 WHERE key='app'", params![APP_ID])?;
         }
     }
     // 표를 다시 만드는 마이그레이션(영역 값 제한 넓히기 등)이 연결된 기록을 지우지 않도록 외래키를 끄고 실행하고,
@@ -226,6 +236,28 @@ mod tests {
         assert_eq!(mode.to_lowercase(), "wal");
         let fk: i64 = db.with(|c| Ok(c.query_row("PRAGMA foreign_keys", [], |r| r.get(0))?)).unwrap();
         assert_eq!(fk, 1);
+    }
+
+    #[test]
+    fn legacy_app_id_is_accepted_and_renamed() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("n.db");
+        {
+            let db = Db::open(&path).unwrap();
+            db.with(|c| {
+                c.execute("UPDATE app_meta SET value='local-teacher-notebook' WHERE key='app'", [])?;
+                c.execute("INSERT INTO notes(raw_text, created_at, updated_at) VALUES ('예전 기록', 'x', 'x')", [])?;
+                Ok(())
+            })
+            .unwrap();
+        }
+        // 1.0 첫 배포의 식별자로 만든 DB 도 열고, 열 때 새 식별자로 바꾼다
+        let db = Db::open(&path).unwrap();
+        let (app, n): (String, i64) = db
+            .with(|c| Ok((c.query_row("SELECT value FROM app_meta WHERE key='app'", [], |r| r.get(0))?, c.query_row("SELECT COUNT(*) FROM notes", [], |r| r.get(0))?)))
+            .unwrap();
+        assert_eq!((app.as_str(), n), (APP_ID, 1));
+        assert!(is_our_app(Some("local-teacher-notebook")) && !is_our_app(Some("other")) && !is_our_app(None));
     }
 
     #[test]

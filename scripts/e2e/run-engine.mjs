@@ -1,6 +1,6 @@
 // AI 엔진(llama-server) 정리 E2E: 프로그램을 보통으로 닫을 때와 강제로 끝낼 때(작업 관리자 '작업 끝내기'와 같음)
 // 엔진이 남지 않는지, 다시 켜면 엔진이 하나만 뜨는지 확인한다.
-// 실행: node scripts/e2e/run-engine.mjs <TeacherNotebook.exe> <데이터폴더> <gguf 경로>
+// 실행: node scripts/e2e/run-engine.mjs <teachers_note.exe> <데이터폴더> <gguf 경로>
 import { execFileSync, execSync } from "node:child_process";
 import path from "node:path";
 import { connect, launch, sleep, waitFor } from "./cdp.mjs";

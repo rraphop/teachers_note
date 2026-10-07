@@ -209,6 +209,7 @@ pub fn run() {
             // 자동 시작을 켜 두었으면, 파일 하나 버전으로 켤 때마다 지금 켠 파일("교무수첩_1.0.0.exe")을 가리키게 한다
             // (새 버전 파일로 바꾸거나 지난 버전 파일을 지워도 자동 시작이 끊기지 않게).
             // 예전 모양(`--background`: 알림 영역에만 켜기)이면 창을 띄우는 모양으로 고쳐 쓴다.
+            notify::migrate_autostart_name();
             if let Some(cur) = notify::autostart_target() {
                 let exe = paths::launcher_path().unwrap_or_else(|| std::path::PathBuf::from(notify::autostart_exe(&cur)));
                 if notify::autostart_command(&exe).to_lowercase() != cur.trim().to_lowercase() {

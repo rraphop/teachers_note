@@ -247,13 +247,13 @@ try {
   // 시험(TN_DATA_ROOT)에서는 실제 시작 프로그램 목록 대신 시험용 키에 쓴다 — 실제 목록은 그대로인지도 확인
   const regValue = (key) => {
     try {
-      return execFileSync("reg", ["query", key, "/v", "LocalTeacherNotebookV2"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+      return execFileSync("reg", ["query", key, "/v", "teachers_note"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
     } catch {
       return null;
     }
   };
   const REAL_RUN = "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run";
-  const TEST_RUN = "HKCU\\Software\\LocalTeacherNotebookV2-Test\\Run";
+  const TEST_RUN = "HKCU\\Software\\teachers_note-Test\\Run";
   const realBefore = regValue(REAL_RUN);
   const opts = await app.evaluate(`(() => {
     const o = document.getElementById('side-opts');
@@ -311,7 +311,7 @@ try {
   child.kill();
   // 시험이 만든 빈 시험용 키 정리 (실제 시작 프로그램 목록과는 다른 키)
   try {
-    execFileSync("reg", ["delete", "HKCU\\Software\\LocalTeacherNotebookV2-Test", "/f"], { stdio: "ignore" });
+    execFileSync("reg", ["delete", "HKCU\\Software\\teachers_note-Test", "/f"], { stdio: "ignore" });
   } catch {}
   await fs.writeFile(path.join(shots, "results-v09.json"), JSON.stringify(results, null, 2));
   const failed = results.filter((r) => !r.ok).length;

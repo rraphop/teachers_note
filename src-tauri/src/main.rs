@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    teacher_notebook_lib::run();
+    teachers_note_lib::run();
 }

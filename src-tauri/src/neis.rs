@@ -147,7 +147,7 @@ pub fn http_get(url: &str) -> AppResult<String> {
         return Err(AppError::msg("나이스 주소가 아닙니다."));
     }
     let client = reqwest::blocking::Client::builder()
-        .user_agent(concat!("LocalTeacherNotebook/", env!("CARGO_PKG_VERSION")))
+        .user_agent(concat!("teachers_note/", env!("CARGO_PKG_VERSION")))
         .connect_timeout(std::time::Duration::from_secs(10))
         .timeout(std::time::Duration::from_secs(25))
         .build()

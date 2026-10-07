@@ -10,14 +10,18 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $Root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
-$Tools = Join-Path (Split-Path -Parent $Root) 'teacher-notebook-v2-tools'
+$Tools = Join-Path (Split-Path -Parent $Root) 'teachers_note-tools'
 . (Join-Path $Tools 'env.ps1')
 if (-not $OutRoot) { $OutRoot = Join-Path $Root 'dist-portable' }
 $Target = 'x86_64-pc-windows-gnullvm'
 $Release = Join-Path $Root "src-tauri\target\$Target\release"
-$PkgName = 'TeacherNotebook-Portable'
+# 프로그램 버전 (tauri.conf.json) — 내려받는 파일 이름에 쓴다
+$appVersion = (Get-Content (Join-Path $Root 'src-tauri\tauri.conf.json') -Raw -Encoding UTF8 | ConvertFrom-Json).version
+# 내려받는 파일만 한글 이름(교무수첩_버전.exe / .zip), 나머지는 teachers_note
+$PkgName = 'teachers_note'
 $Pkg = Join-Path $OutRoot $PkgName
-$Zip = Join-Path $OutRoot 'TeacherNotebook-Portable-x64.zip'
+$ZipName = "교무수첩_$appVersion.zip"
+$Zip = Join-Path $OutRoot $ZipName
 
 function Step($m) { Write-Host "`n=== $m ===" -ForegroundColor Cyan }
 
@@ -29,7 +33,7 @@ if (-not $SkipBuild) {
     if ($LASTEXITCODE -ne 0) { throw 'Tauri Release 빌드 실패' }
   } finally { Pop-Location }
 }
-$exe = Join-Path $Release 'TeacherNotebook.exe'
+$exe = Join-Path $Release 'teachers_note.exe'
 if (-not (Test-Path $exe)) { throw "EXE 가 없습니다: $exe" }
 $runtimeSrc = Join-Path $Root 'src-tauri\runtime\llama.cpp'
 if (-not (Test-Path (Join-Path $runtimeSrc 'llama-server.exe'))) { throw 'runtime\llama.cpp 가 준비되지 않았습니다. scripts\prepare-runtime.ps1 을 먼저 실행하세요.' }
@@ -76,7 +80,7 @@ $crateDir = Join-Path $lic 'rust'
 New-Item -ItemType Directory -Force $crateDir | Out-Null
 foreach ($p in ($meta.packages | Sort-Object name)) {
   if (-not $ids.Contains($p.id)) { continue }
-  if ($p.name -eq 'teacher-notebook') { continue }
+  if ($p.name -eq 'teachers_note') { continue }
   $licName = if ($p.license) { $p.license } else { '(license-file)' }
   $notice.Add("  $($p.name) $($p.version) — $licName$(if ($p.repository) { ' — ' + $p.repository })")
   $dir = Split-Path -Parent $p.manifest_path
@@ -133,7 +137,7 @@ function Invoke-SelfTest($dir, $label) {
   New-Item -ItemType Directory -Force $dataRoot | Out-Null
   $env:TN_DATA_ROOT = $dataRoot
   try {
-    $p = Start-Process -FilePath (Join-Path $dir 'TeacherNotebook.exe') -ArgumentList @('--self-test', $report) -PassThru -WindowStyle Hidden
+    $p = Start-Process -FilePath (Join-Path $dir 'teachers_note.exe') -ArgumentList @('--self-test', $report) -PassThru -WindowStyle Hidden
     if (-not $p.WaitForExit(90000)) { $p.Kill(); throw "${label}: self-test 시간 초과" }
     if (-not (Test-Path $report)) { throw "${label}: self-test 보고서가 없습니다 (종료 코드 $($p.ExitCode))" }
     $r = Get-Content $report -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -155,7 +159,7 @@ if (Test-Path $Zip) { Remove-Item -Force $Zip }
 & tar -a -c -f $Zip -C $OutRoot $PkgName
 if ($LASTEXITCODE -ne 0) { throw 'ZIP 만들기 실패' }
 $zipHash = (Get-FileHash $Zip -Algorithm SHA256).Hash.ToLower()
-"$zipHash  TeacherNotebook-Portable-x64.zip" | Out-File -Encoding ascii (Join-Path $OutRoot 'TeacherNotebook-Portable-x64.zip.sha256')
+[System.IO.File]::WriteAllText((Join-Path $OutRoot "$ZipName.sha256"), "$zipHash  $ZipName`r`n", (New-Object System.Text.UTF8Encoding($false)))
 Write-Host "ZIP: $Zip ($([math]::Round((Get-Item $Zip).Length / 1MB, 1))MB) sha256=$zipHash"
 
 Step '8. 다른 폴더에 풀어서 재검산 + 옮긴 위치 self-test'
@@ -180,7 +184,7 @@ try {
 
 Step '9. 파일 하나 버전 교무수첩_버전.exe (바탕화면에 두고 실행)'
 # 조립한 폴더 전체를 묶음(payload.zip)으로 만들고, 파일 목록과 SHA-256 을 실행기 안에 함께 넣는다
-$appVersion = ($meta.packages | Where-Object { $_.name -eq 'teacher-notebook' } | Select-Object -First 1).version
+# (버전은 맨 위에서 tauri.conf.json 으로 읽었다)
 $work = Join-Path $OutRoot '.single-work'
 if (Test-Path $work) { Remove-Item -Recurse -Force $work }
 New-Item -ItemType Directory -Force $work | Out-Null
@@ -193,7 +197,7 @@ $entries = foreach ($f in (Get-ChildItem $Pkg -Recurse -File | Sort-Object FullN
   [ordered]@{ path = $f.FullName.Substring($Pkg.Length + 1).Replace('\', '/'); size = $f.Length; sha256 = (Get-FileHash $f.FullName -Algorithm SHA256).Hash.ToLower() }
 }
 $manifestPath = Join-Path $work 'manifest.json'
-$manifestJson = [ordered]@{ version = $appVersion; main = 'TeacherNotebook.exe'; files = @($entries) } | ConvertTo-Json -Depth 4 -Compress
+$manifestJson = [ordered]@{ version = $appVersion; main = 'teachers_note.exe'; files = @($entries) } | ConvertTo-Json -Depth 4 -Compress
 [System.IO.File]::WriteAllText($manifestPath, $manifestJson, (New-Object System.Text.UTF8Encoding($false)))
 $env:TN_PAYLOAD = $payload
 $env:TN_MANIFEST = $manifestPath
@@ -209,7 +213,7 @@ try {
 # 파일 이름: 교무수첩_버전.exe — 프로그램 버전 그대로 (예: 교무수첩_1.0.0.exe)
 $singleName = "교무수첩_$appVersion.exe"
 $single = Join-Path $OutRoot $singleName
-Copy-Item (Join-Path $Root "launcher\target\$Target\release\TeacherNotebook.exe") $single -Force
+Copy-Item (Join-Path $Root "launcher\target\$Target\release\teachers_note_launcher.exe") $single -Force
 Remove-Item -Recurse -Force $work
 $singleHash = (Get-FileHash $single -Algorithm SHA256).Hash.ToLower()
 [System.IO.File]::WriteAllText((Join-Path $OutRoot "$singleName.sha256"), "$singleHash  $singleName`r`n", (New-Object System.Text.UTF8Encoding($false)))
@@ -255,7 +259,7 @@ Step '10. Windows 보안(Defender) 검사 — 격리하지 않고 검사만'
 # 내려받은 사람의 PC에서 막히지 않는지 미리 본다. 탐지되면 배포하지 말고 원인을 찾는다.
 $mp = Join-Path $env:ProgramFiles 'Windows Defender\MpCmdRun.exe'
 if (Test-Path $mp) {
-  foreach ($f in @($single, $Zip, (Join-Path $Pkg 'TeacherNotebook.exe'))) {
+  foreach ($f in @($single, $Zip, (Join-Path $Pkg 'teachers_note.exe'))) {
     $out = & $mp -Scan -ScanType 3 -File $f -DisableRemediation 2>&1 | Out-String
     if ($LASTEXITCODE -eq 2) {
       $name = (($out -split "`n") | Where-Object { $_ -match '^Threat\s' }) -join ' '

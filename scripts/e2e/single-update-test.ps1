@@ -7,7 +7,7 @@
 param([string]$Shots = '')
 $ErrorActionPreference = 'Stop'
 $Root = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path))
-. (Join-Path (Split-Path -Parent $Root) 'teacher-notebook-v2-tools\env.ps1')
+. (Join-Path (Split-Path -Parent $Root) 'teachers_note-tools\env.ps1')
 if (-not $Shots) { $Shots = Join-Path $Root 'docs\screenshots' }
 $Target = 'x86_64-pc-windows-gnullvm'
 $tmp = Join-Path $env:TEMP ("tn-single-e2e-" + [guid]::NewGuid().ToString('N'))
@@ -34,14 +34,14 @@ try {
   Write-Host "=== 2. 새 버전 파일 만들기: $(Split-Path $newExe -Leaf) ($newVer, 시험용) ==="
   $work = Join-Path $tmp 'build'
   New-Item -ItemType Directory -Force $work | Out-Null
-  $pkg = Join-Path $Root 'dist-portable\TeacherNotebook-Portable'
+  $pkg = Join-Path $Root 'dist-portable\teachers_note'
   Add-Type -AssemblyName System.IO.Compression.FileSystem
   # 패키징과 같이 압축하지 않는다 (압축한 묶음은 Windows 보안이 오탐해 시험 파일을 치운다)
   [System.IO.Compression.ZipFile]::CreateFromDirectory($pkg, (Join-Path $work 'payload.zip'), [System.IO.Compression.CompressionLevel]::NoCompression, $false)
   $entries = foreach ($f in (Get-ChildItem $pkg -Recurse -File | Sort-Object FullName)) {
     [ordered]@{ path = $f.FullName.Substring($pkg.Length + 1).Replace('\', '/'); size = $f.Length; sha256 = (Get-FileHash $f.FullName -Algorithm SHA256).Hash.ToLower() }
   }
-  $json = [ordered]@{ version = $newVer; main = 'TeacherNotebook.exe'; files = @($entries) } | ConvertTo-Json -Depth 4 -Compress
+  $json = [ordered]@{ version = $newVer; main = 'teachers_note.exe'; files = @($entries) } | ConvertTo-Json -Depth 4 -Compress
   [System.IO.File]::WriteAllText((Join-Path $work 'manifest.json'), $json, (New-Object System.Text.UTF8Encoding($false)))
   $env:TN_PAYLOAD = Join-Path $work 'payload.zip'
   $env:TN_MANIFEST = Join-Path $work 'manifest.json'
@@ -55,7 +55,7 @@ try {
     Pop-Location
     Remove-Item Env:\TN_PAYLOAD, Env:\TN_MANIFEST, Env:\CARGO_TARGET_DIR -ErrorAction SilentlyContinue
   }
-  Copy-Item (Join-Path $work "target\$Target\release\TeacherNotebook.exe") $newExe
+  Copy-Item (Join-Path $work "target\$Target\release\teachers_note_launcher.exe") $newExe
 
   Write-Host "=== 3. 새 버전 파일 실행 (지난 파일 정리 질문에 '아니요') ==="
   $env:TN_TEST_ANSWER = 'no'

@@ -34,7 +34,7 @@ async function readXlsx(file) {
 
 /** 재시작으로 새로 뜬 교무수첩(부모가 처음 띄운 프로세스)만 끈다 — 교사가 켜 둔 창은 건드리지 않는다 */
 function killChildrenOf(pid) {
-  const ps = `Get-CimInstance Win32_Process -Filter "ParentProcessId=${pid}" | Where-Object { $_.Name -eq 'TeacherNotebook.exe' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force; $_.ProcessId }`;
+  const ps = `Get-CimInstance Win32_Process -Filter "ParentProcessId=${pid}" | Where-Object { $_.Name -eq 'teachers_note.exe' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force; $_.ProcessId }`;
   const enc = Buffer.from(ps, "utf16le").toString("base64");
   try {
     return execFileSync("powershell", ["-NoProfile", "-EncodedCommand", enc], { encoding: "utf8" }).trim();

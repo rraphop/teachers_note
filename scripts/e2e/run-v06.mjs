@@ -17,7 +17,7 @@ const check = (name, ok, detail = "") => {
 /** 이 시험 데이터 폴더에서 풀려 실행 중인 교무수첩만 끈다 (교사가 쓰는 창은 건드리지 않음) */
 function killTestApps() {
   const prefix = path.join(dataRoot, "program").toLowerCase().replace(/'/g, "''");
-  const ps = `Get-CimInstance Win32_Process -Filter "Name='TeacherNotebook.exe'" | Where-Object { $_.ExecutablePath -and $_.ExecutablePath.ToLower().StartsWith('${prefix}') } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force; $_.ProcessId }`;
+  const ps = `Get-CimInstance Win32_Process -Filter "Name='teachers_note.exe'" | Where-Object { $_.ExecutablePath -and $_.ExecutablePath.ToLower().StartsWith('${prefix}') } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force; $_.ProcessId }`;
   try {
     return execFileSync("powershell", ["-NoProfile", "-EncodedCommand", Buffer.from(ps, "utf16le").toString("base64")], { encoding: "utf8" }).trim();
   } catch {

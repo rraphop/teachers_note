@@ -7,7 +7,7 @@
 ## 1. 전체 구조
 
 ```
-TeacherNotebook.exe (Tauri 2, Rust)
+teachers_note.exe (Tauri 2, Rust)
  ├─ 화면: React + TypeScript strict (EXE 안에 내장, 개발 서버 불필요)
  ├─ 명령 계층 commands.rs  ──  화면이 부르는 70여 개 명령
  ├─ 도메인
@@ -230,8 +230,9 @@ LLVM `libc++.dll`/`libunwind.dll`(Apache-2.0 WITH LLVM-exception, 재배포 가�
 
 - **방과후 요일 (0.9)**: `AfterSchool.days`·`PeriodSlot.days` (1=월 … 6=토, 비어 있으면 매일 — 예전 설정과 같게). 교시 시각을 직접 고쳐 저장해도 요일은 설정값으로 다시 맞춘다. 오늘 시간표는 그 요일에만(그날 변경이 있으면 보임), 주간 시간표는 다른 요일 칸을 막는다.
 - **자동 실행·항상 위 (0.9)**: 왼쪽 메뉴 ‘설정’ 바로 아래 체크 두 개.
-  - 자동 실행은 HKCU `…\CurrentVersion\Run` 의 `LocalTeacherNotebookV2` 값에 `"실행파일"`만 적는다(창을 띄운 채로 켬). 예전 `--background`(알림 영역에만) 모양은 프로그램을 켤 때 고쳐 쓴다. `--background` 인자 자체는 계속 받는다.
-  - 자동 시험(`TN_DATA_ROOT` 설정)에서는 실제 시작 프로그램 목록 대신 `HKCU\Software\LocalTeacherNotebookV2-Test\Run` 에 쓴다.
+  - 자동 실행은 HKCU `…\CurrentVersion\Run` 의 `teachers_note` 값에(1.0 첫 배포까지는 `LocalTeacherNotebookV2` — 켤 때 새 이름으로 옮긴다) `"실행파일"`만 적는다(창을 띄운 채로 켬). 예전 `--background`(알림 영역에만) 모양은 프로그램을 켤 때 고쳐 쓴다. `--background` 인자 자체는 계속 받는다.
+  - 자동 시험(`TN_DATA_ROOT` 또는 `TN_TEST_SANDBOX` 설정)에서는 실제 시작 프로그램 목록 대신 `HKCU\Software\teachers_note-Test\Run` 에 쓴다.
+- 이름 통일 (1.0 이후): 실행 파일·포터블 폴더·Rust·npm 패키지·앱 식별자(DB 의 app_meta)·알림 발신자(AUMID)·시작 프로그램 값을 모두 `teachers_note` 로. 내려받는 파일만 한글 이름(`교무수첩_버전.exe`, `교무수첩_버전.zip`). 예전 이름(DB 식별자 `local-teacher-notebook`, AUMID `LocalTeacherNotebook.V2`, Run 값 `LocalTeacherNotebookV2`)은 켤 때 알아보고 새 이름으로 바꾼다.
   - 투명도(1.0)는 `AppSettings.window_transparency`(0~70%)에 저장하고 `window_fx.rs` 가 Windows 계층 창(WS_EX_LAYERED) 알파로 적용한다(메인 스레드에서). 70%를 넘지 못하게 해 창이 안 보이게 되는 일을 막고, 0%로 되돌리면 알파 255로 둔다(계층 스타일을 떼면 다시 그릴 때까지 깜박임). 끄는 동안 바로 보이게 마지막 값만 이어서 보내고, data-changed 는 보내지 않는다.
   - 항상 위는 `AppSettings.always_on_top` 에 저장하고 창을 만들 때·`set_always_on_top` 때 적용한다. `update_settings` 는 이 값을 바꾸지 않는다(화면에 남은 예전 설정으로 덮어쓰지 않게).
 - **학사력 색 (0.9)**: 빨강은 휴일 색으로만 쓴다. 학사력 층 색은 청회색(`.layer-annual`). 오늘 화면 ‘다가오는 일정’ 점은 휴일·휴업일·방학이면 설정의 날짜 색(`AgendaItem.day_color`)이다. 학사력(연간) 달력과 기록물 PDF 학사력 달력은 일요일부터 시작하고, 일요일 날짜는 휴일 색이다. 주간·월간 표는 월요일부터.
