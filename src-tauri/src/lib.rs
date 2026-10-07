@@ -123,6 +123,12 @@ pub fn run() {
         Ok(d) => Arc::new(d),
         Err(e) => fatal(&format!("{e}\n\n데이터 위치: {}", paths.db_path.display())),
     };
+    // 2차 수정 전에 AI 가 학생부 자료로 넣은 개인정보(전화번호·주소 등)를 학생 명렬표로 한 번 옮긴다
+    match db.with(|c| profile::backfill(c, util::now())) {
+        Ok(0) => {}
+        Ok(n) => logging::info(&format!("예전 기록 속 개인정보 {n}건을 학생 명렬표로 옮김")),
+        Err(e) => logging::error(&format!("예전 기록 속 개인정보 옮기기 실패 (계속 진행): {e}")),
+    }
 
     let paths_for_setup = paths.clone();
     let db_for_setup = db.clone();

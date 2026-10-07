@@ -1,7 +1,7 @@
 import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
 import { api, errorText } from "../api";
 import { ErrorBox } from "../components/Fields";
-import { IconPlus, IconTrash } from "../components/Icons";
+import { IconPlus, IconSettings, IconTrash } from "../components/Icons";
 import { confirmDialog, Modal } from "../components/Modal";
 import { useLoad, useStore } from "../lib/store";
 import { fmtDateTime } from "../lib/format";
@@ -875,19 +875,30 @@ export function TimetablePage() {
       <NeisTimetableBar />
       {paint && <p className="callout soft">색칠하기: 칸을 누르면 그 칸·교과·교사·학급·교실의 색을 고를 수 있습니다. 비어 있는 칸(공강)과 점심은 회색으로 보입니다.</p>}
       <p className="hint">아래 기록 입력창에 “월 3교시 2-1 국어 과학실”처럼 적어도 개인 시간표에 들어갑니다. “내일 3교시 2-1 보강”처럼 하루만 바뀌는 것은 그날에만 표시됩니다.</p>
-      <div className="seg tabs">
-        {(
-          [
-            ["personal", "개인 시간표"],
-            ["class", "학급 시간표"],
-            ["school", "전체 시간표"],
-            ["bell", "일과 시간 설정"],
-          ] as Array<[Tab, string]>
-        ).map(([k, l]) => (
-          <button key={k} className={tab === k ? "on" : ""} onClick={() => setTab(k)}>
-            {l}
-          </button>
-        ))}
+      {/* 시간표 보기(개인·학급·전체)와 일과 시간 설정은 성격이 달라, 설정은 같은 줄 오른쪽 끝 톱니 단추로 둔다 */}
+      <div className="tt-tabbar">
+        <div className="seg tabs">
+          {(
+            [
+              ["personal", "개인 시간표"],
+              ["class", "학급 시간표"],
+              ["school", "전체 시간표"],
+            ] as Array<[Tab, string]>
+          ).map(([k, l]) => (
+            <button key={k} className={tab === k ? "on" : ""} onClick={() => setTab(k)}>
+              {l}
+            </button>
+          ))}
+        </div>
+        <button
+          className={`icon-btn tt-bell-btn ${tab === "bell" ? "on" : ""}`}
+          onClick={() => setTab(tab === "bell" ? "personal" : "bell")}
+          aria-pressed={tab === "bell"}
+          aria-label="일과 시간 설정"
+          title={tab === "bell" ? "일과 시간 설정 닫기 (개인 시간표로)" : "일과 시간 설정 (교시 시각·방과후)"}
+        >
+          <IconSettings size={20} />
+        </button>
       </div>
       {(bell.error || view.error) && <ErrorBox error={bell.error ?? view.error ?? ""} />}
       {bell.data && !bell.data.saved && tab !== "bell" && (

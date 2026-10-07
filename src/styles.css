@@ -2249,6 +2249,31 @@ pre.license-text {
 .seg.tabs {
   margin-bottom: 12px;
 }
+/* 시간표: 보기 탭은 왼쪽, 일과 시간 설정(톱니)은 같은 줄 오른쪽 끝 */
+.tt-tabbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.tt-tabbar .seg.tabs {
+  margin-bottom: 0;
+}
+.tt-bell-btn {
+  margin-left: auto;
+  min-height: 34px;
+  min-width: 34px;
+  border: 1px solid var(--line);
+  background: #fff;
+}
+.tt-bell-btn.on {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+}
+.tt-bell-btn.on:hover:not(:disabled) {
+  background: var(--primary);
+}
 .tt-classbar {
   margin-bottom: 10px;
 }

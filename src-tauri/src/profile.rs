@@ -413,6 +413,39 @@ fn apply_one(conn: &Connection, note_id: i64, sid: i64, item: &ProfileItem, sour
 }
 
 /// 분류를 저장할 때: 개인정보를 명렬표로, 특이사항은 질문으로. 학생을 못 정한 이름은 `unresolved` 에 더한다.
+const BACKFILL_KEY: &str = "profile_backfill_v1";
+
+/// 한 번만: 2차 수정 전 빌드가 AI 학생 관찰로 학생부 자료에 넣은 개인정보를 학생 명렬표로 옮긴다.
+/// 교사가 직접 쓴 관찰은 건드리지 않는다. 이미 값이 있으면 덮어쓰지 않고 기록 카드에서 확인을 기다린다.
+pub fn backfill(conn: &Connection, now: NaiveDateTime) -> AppResult<usize> {
+    if crate::db::get_setting(conn, BACKFILL_KEY)?.is_some() {
+        return Ok(0);
+    }
+    let tx = conn.unchecked_transaction()?;
+    let rows: Vec<(i64, i64, i64, String)> = {
+        let mut st = tx.prepare("SELECT id, note_id, student_id, content FROM observations WHERE source='ai' AND note_id IS NOT NULL AND student_id IS NOT NULL ORDER BY id")?;
+        let v = st.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?.collect::<Result<Vec<_>, _>>()?;
+        v
+    };
+    let mut moved = 0;
+    for (oid, note_id, sid, content) in rows {
+        let hits = find_hits(&content);
+        if hits.is_empty() {
+            continue;
+        }
+        for h in hits {
+            let student = PlanStudent { student_id: Some(sid), name: String::new(), class_label: None, number: None, candidates: vec![] };
+            let item = ProfileItem { field: h.field.to_string(), value: h.value, relation: h.relation, student, text: content.clone() };
+            apply_one(&tx, note_id, sid, &item, "ai", now)?;
+        }
+        tx.execute("DELETE FROM observations WHERE id=?1", params![oid])?;
+        moved += 1;
+    }
+    crate::db::set_setting(&tx, BACKFILL_KEY, &util::fmt_dt(now))?;
+    tx.commit()?;
+    Ok(moved)
+}
+
 pub fn apply(
     conn: &Connection,
     note_id: i64,
@@ -685,6 +718,36 @@ mod tests {
         // 개인정보가 없는 문장
         assert!(fields("홍길동 수업 중 발표를 잘함").is_empty());
         assert!(fields("10월 12일 3교시 공개수업").is_empty());
+    }
+
+    #[test]
+    fn backfill_moves_old_ai_observations_once() {
+        let db = crate::db::Db::open_in_memory().unwrap();
+        db.with(|c| {
+            let now = util::parse_dt("2026-10-08T09:00:00").unwrap();
+            let sid = students::create_student(c, &students::StudentInput { name: "홍길동".into(), class_label: Some("3-1".into()), number: None, memo: None }, now)?;
+            let note = crate::notes::create_note(c, "3-1 홍길동 전화번호 010-1234-5678", now)?;
+            let ins = |content: &str, source: &str| -> AppResult<()> {
+                c.execute(
+                    "INSERT INTO observations(note_id, student_id, area, content, observed_on, source, created_at, updated_at) VALUES (?1, ?2, 'none', ?3, '2026-10-06', ?4, 'x', 'x')",
+                    params![note, sid, content, source],
+                )?;
+                Ok(())
+            };
+            ins("3-1 홍길동 전화번호 010-1234-5678", "ai")?;
+            ins("3-1 홍길동 발표를 잘함", "ai")?;
+            ins("홍길동 어머니 010-9876-5432 (교사가 직접 씀)", "manual")?;
+            assert_eq!(backfill(c, now)?, 1);
+            let s = students::get_student(c, sid)?;
+            assert_eq!(s.phone, "010-1234-5678", "예전 AI 관찰의 번호가 명렬표로");
+            let left: Vec<String> = c.prepare("SELECT content FROM observations ORDER BY id")?.query_map([], |r| r.get(0))?.collect::<Result<_, _>>()?;
+            assert_eq!(left, vec!["3-1 홍길동 발표를 잘함".to_string(), "홍길동 어머니 010-9876-5432 (교사가 직접 씀)".to_string()], "개인정보 관찰만 빠지고 직접 쓴 것은 그대로");
+            // 두 번째부터는 하지 않는다
+            ins("3-1 홍길동 주소 OO시 OO구 OO로 12", "ai")?;
+            assert_eq!(backfill(c, now)?, 0);
+            Ok(())
+        })
+        .unwrap();
     }
 
     #[test]

@@ -86,7 +86,15 @@ try {
   // ── 3. 시간표 ──
   await app.nav("시간표");
   await sleep(700);
-  await app.click("일과 시간 설정", ".seg.tabs button");
+  // 일과 시간 설정은 보기 탭(개인·학급·전체)과 같은 줄 오른쪽 끝 톱니 단추
+  const bellBtn = await app.evaluate(`(() => {
+    const bar = document.querySelector('.tt-tabbar'), tabs = bar?.querySelector('.seg.tabs'), btn = bar?.querySelector('.tt-bell-btn');
+    if (!btn) return null;
+    const a = bar.getBoundingClientRect(), t = tabs.getBoundingClientRect(), b = btn.getBoundingClientRect();
+    return { tabs: [...tabs.querySelectorAll('button')].map(x => x.innerText.trim()), sameRow: Math.abs((t.top + t.bottom) / 2 - (b.top + b.bottom) / 2) < 6, rightEnd: Math.abs(a.right - b.right) < 2, icon: !!btn.querySelector('svg') && btn.innerText.trim() === '', label: btn.getAttribute('aria-label') };
+  })()`);
+  check("시간표: 보기 탭은 개인·학급·전체, 일과 시간 설정은 같은 줄 오른쪽 끝 톱니 단추", !!bellBtn && bellBtn.tabs.join(",") === "개인 시간표,학급 시간표,전체 시간표" && bellBtn.sameRow && bellBtn.rightEnd && bellBtn.icon && bellBtn.label === "일과 시간 설정", JSON.stringify(bellBtn));
+  await app.evaluate(`document.querySelector('.tt-bell-btn').click(), true`);
   await sleep(500);
   await app.click("고등학교 (50분)", ".bell button");
   await sleep(400);

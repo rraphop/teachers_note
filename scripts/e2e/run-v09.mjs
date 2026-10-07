@@ -156,7 +156,7 @@ try {
   // ── 5. 방과후 요일: 월 7·8교시, 화·목 8교시 ──
   await app.nav("시간표");
   await sleep(600);
-  await app.click("일과 시간 설정", ".seg.tabs button");
+  await app.evaluate(`document.querySelector('.tt-bell-btn').click(), true`);
   await waitFor(() => app.evaluate(`!!document.querySelector('.after-school')`), { label: "일과 시간 설정" });
   // 정규 수업은 6교시까지, 방과후를 7·8교시로
   await app.evaluate(`window.__e2e.setValue([...document.querySelectorAll('.bell-grid label')].find(l => l.innerText.includes('교시 수')).querySelector('select'), '6')`);
