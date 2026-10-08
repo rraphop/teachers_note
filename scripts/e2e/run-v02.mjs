@@ -172,6 +172,12 @@ try {
   // 학생 추가 줄 (3차 3번): 학급은 학급이 생기면 드롭다운, 처음엔 입력칸
   const addRow = async (cls, num, name) => {
     const q = (label) => `document.querySelector('.add-row [aria-label="${label}"]')`;
+    // 드롭다운에 없는 학급이면 '+ 새 학급'을 고른 뒤 적는다 (실제 화면과 같은 흐름)
+    const how = await app.evaluate(`(() => { const s = ${q("추가할 학생의 학급")}; if (!s) return 'input'; return [...s.options].some(o => o.value === '${cls}') ? 'select' : 'new'; })()`);
+    if (how === "new") {
+      await app.evaluate(`window.__e2e.setValue(${q("추가할 학생의 학급")}, '__new__')`);
+      await sleep(200);
+    }
     await app.evaluate(`window.__e2e.setValue(${q("추가할 학생의 학급")} || ${q("새 학급")}, '${cls}')`);
     await sleep(150);
     await app.evaluate(`window.__e2e.setValue(${q("추가할 학생의 번호")}, '${num}')`);
