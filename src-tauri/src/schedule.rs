@@ -196,6 +196,7 @@ pub fn update_task(conn: &Connection, id: i64, input: &TaskInput, now: NaiveDate
         params![id, title, due, time, date_expr, input.duty_id, done as i64, done_at, approximate as i64, en, offs, rt, custom, util::fmt_dt(now)],
     )?;
     reminders::rebuild(conn, TargetKind::Task, id, now)?;
+    sync_done_record(conn, id, now)?;
     Ok(())
 }
 
@@ -208,6 +209,51 @@ pub fn set_task_done(conn: &Connection, id: i64, done: bool, now: NaiveDateTime)
         return Err(AppError::not_found("할 일을 찾을 수 없습니다."));
     }
     reminders::rebuild(conn, TargetKind::Task, id, now)?;
+    sync_done_record(conn, id, now)?;
+    Ok(())
+}
+
+/// "10월 8일 13:30 완료 · 군청에 참석 인원 회신"
+pub fn done_record_text(done_at: NaiveDateTime, title: &str) -> String {
+    use chrono::{Datelike, Timelike};
+    format!("{}월 {}일 {:02}:{:02} 완료 · {}", done_at.month(), done_at.day(), done_at.hour(), done_at.minute(), title.trim())
+}
+
+/// 할 일의 완료 기록을 맞춘다 (3차 6번): 끝낸 할 일이면 업무와 연결된 것은 그 업무의 업무 기록, 아니면 일반 기록을 하나 남기고,
+/// 끝내지 않은 할 일이면 남겨 둔 완료 기록을 지운다. 교사가 체크한 것이라 출처는 'manual'(새 항목 숫자에 넣지 않음).
+pub fn sync_done_record(conn: &Connection, task_id: i64, now: NaiveDateTime) -> AppResult<()> {
+    let row: Option<(String, Option<i64>, Option<i64>, i64, Option<String>)> = conn
+        .query_row("SELECT title, duty_id, note_id, done, done_at FROM tasks WHERE id=?1", params![task_id], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
+        })
+        .optional()?;
+    conn.execute("DELETE FROM duty_logs WHERE from_task_id=?1", params![task_id])?;
+    conn.execute("DELETE FROM notes WHERE from_task_id=?1", params![task_id])?;
+    let Some((title, duty_id, note_id, done, done_at)) = row else { return Ok(()) };
+    if done == 0 {
+        return Ok(());
+    }
+    let at = done_at.as_deref().and_then(util::parse_dt).unwrap_or(now);
+    let text = done_record_text(at, &title);
+    let at_s = util::fmt_dt(at);
+    let now_s = util::fmt_dt(now);
+    match duty_id {
+        Some(d) => {
+            conn.execute(
+                "INSERT INTO duty_logs(note_id, duty_id, content, date, time, done, source, from_task_id, ref_note_id, created_at, updated_at)
+                 VALUES (NULL, ?1, ?2, ?3, ?4, 1, 'manual', ?5, ?6, ?7, ?7)",
+                params![d, text, util::fmt_d(at.date()), util::fmt_t(at.time()), task_id, note_id, now_s],
+            )?;
+        }
+        None => {
+            // 일반 기록 (AI 가 다시 할 일로 정리하지 않도록 정리된 상태로 둔다)
+            conn.execute(
+                "INSERT INTO notes(raw_text, created_at, updated_at, status, summary, summary_source, classified_at, classified_by, track, from_task_id, ref_note_id)
+                 VALUES (?1, ?2, ?3, 'classified', ?1, 'extract', ?3, 'manual', 'general', ?4, ?5)",
+                params![text, at_s, now_s, task_id, note_id],
+            )?;
+        }
+    }
     Ok(())
 }
 
@@ -417,6 +463,10 @@ pub struct DutyLogDto {
     pub remind_text: String,
     pub next_reminder: Option<String>,
     pub created_at: String,
+    /// 할 일을 끝내 남긴 완료 기록이면 그 할 일
+    pub from_task_id: Option<i64>,
+    /// 그 할 일이 나온 원래 기록
+    pub ref_note_id: Option<i64>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -437,7 +487,7 @@ pub struct DutyLogInput {
 }
 
 const DUTY_LOG_COLS: &str = "id, note_id, duty_id, content, date, time, date_expr, done, source, edited,
-    remind_enabled, remind_offsets, remind_time, remind_custom_at, created_at";
+    remind_enabled, remind_offsets, remind_time, remind_custom_at, created_at, from_task_id, ref_note_id";
 
 fn map_duty_log(r: &rusqlite::Row) -> rusqlite::Result<DutyLogDto> {
     let remind = spec_from_row(r.get(10)?, r.get(11)?, r.get(12)?, r.get(13)?);
@@ -457,6 +507,8 @@ fn map_duty_log(r: &rusqlite::Row) -> rusqlite::Result<DutyLogDto> {
         remind,
         next_reminder: None,
         created_at: r.get(14)?,
+        from_task_id: r.get(15)?,
+        ref_note_id: r.get(16)?,
     })
 }
 
@@ -893,6 +945,36 @@ mod tests {
     fn today() -> NaiveDate {
         now().date()
     }
+    #[test]
+    fn done_task_leaves_record_and_undo_removes_it() {
+        let db = Db::open_in_memory().unwrap();
+        let c = db.lock();
+        let at = util::parse_dt("2026-10-08T13:30:00").unwrap();
+        // 업무와 연결 없는 할 일 → 일반 기록
+        let t1 = create_task(&c, &TaskInput { title: "군청에 참석 인원 회신".into(), due_date: None, due_time: None, date_expr: None, duty_id: None, done: None, remind: None }, now(), &spec()).unwrap();
+        set_task_done(&c, t1, true, at).unwrap();
+        let (raw, track, status): (String, String, String) =
+            c.query_row("SELECT raw_text, track, status FROM notes WHERE from_task_id=?1", params![t1], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).unwrap();
+        assert_eq!(raw, "10월 8일 13:30 완료 · 군청에 참석 인원 회신");
+        assert_eq!((track.as_str(), status.as_str()), ("general", "classified"));
+        // 체크를 풀면 완료 기록도 지운다
+        set_task_done(&c, t1, false, at).unwrap();
+        let n: i64 = c.query_row("SELECT COUNT(*) FROM notes WHERE from_task_id=?1", params![t1], |r| r.get(0)).unwrap();
+        assert_eq!(n, 0);
+        // 업무와 연결된 할 일 → 그 업무의 업무 기록 (교사가 체크한 것이라 manual)
+        let duty = crate::duties::create_duty(&c, &crate::duties::DutyInput { name: "교무부장".into(), detail: "국제교류".into(), guide: String::new(), keywords: String::new(), active: true }, now()).unwrap();
+        let t2 = create_task(&c, &TaskInput { title: "교장 보고".into(), due_date: None, due_time: None, date_expr: None, duty_id: Some(duty), done: None, remind: None }, now(), &spec()).unwrap();
+        set_task_done(&c, t2, true, at).unwrap();
+        let logs = query_duty_logs(&c, "from_task_id=?1", &[&t2]).unwrap();
+        assert_eq!(logs.len(), 1);
+        assert_eq!((logs[0].content.as_str(), logs[0].duty_id, logs[0].source.as_str(), logs[0].date.as_deref()), ("10월 8일 13:30 완료 · 교장 보고", Some(duty), "manual", Some("2026-10-08")));
+        let general: i64 = c.query_row("SELECT COUNT(*) FROM notes WHERE from_task_id=?1", params![t2], |r| r.get(0)).unwrap();
+        assert_eq!(general, 0, "업무와 연결된 할 일은 일반 기록을 만들지 않는다");
+        // 할 일을 지워도 완료 기록은 남는다 (이미 끝낸 일의 기록)
+        delete_task(&c, t2).unwrap();
+        assert_eq!(query_duty_logs(&c, "from_task_id=?1", &[&t2]).unwrap().len(), 1);
+    }
+
     fn spec() -> ReminderSpec {
         ReminderSpec { enabled: true, offsets: vec![1], time: "08:30".into(), custom_at: None }
     }

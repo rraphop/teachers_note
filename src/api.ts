@@ -88,6 +88,9 @@ const call = <T>(cmd: string, args?: Record<string, unknown>) => invoke<T>(cmd, 
 export const api = {
   // 기록
   createNote: (raw: string) => call<Note>("create_note", { raw }),
+  openQuickWindow: () => call<void>("open_quick_window"),
+  closeQuickWindow: () => call<void>("close_quick_window"),
+  quitApp: () => call<void>("quit_app"),
   listNotes: (filter: NoteFilter) => call<Note[]>("list_notes", { filter }),
   noteDetail: (id: number) => call<NoteDetail>("get_note_detail", { id }),
   updateNoteRaw: (id: number, raw: string) => call<Note>("update_note_raw", { id, raw }),

@@ -7,7 +7,7 @@
 //!   ③ 지금 DB 묶음(본 파일·-wal·-shm)을 옆으로 옮김 ④ 사본을 제자리에 넣는다.
 //!   어느 단계든 실패하면 원래 DB 를 그대로 둔다.
 
-use crate::db::{self, APP_ID};
+use crate::db;
 use crate::error::{AppError, AppResult};
 use crate::logging;
 use crate::paths::AppPaths;
@@ -449,7 +449,7 @@ mod tests {
         {
             let c = Connection::open(paths.backups_dir.join(name)).unwrap();
             c.execute_batch(include_str!("../migrations/0001_init.sql")).unwrap();
-            c.execute("INSERT INTO app_meta(key, value) VALUES ('app', ?1)", params![APP_ID]).unwrap();
+            c.execute("INSERT INTO app_meta(key, value) VALUES ('app', ?1)", params![db::APP_ID]).unwrap();
             c.execute("INSERT INTO notes(raw_text, created_at, updated_at) VALUES ('0.1 기록', 'x', 'x')", []).unwrap();
             c.execute_batch("PRAGMA user_version = 1").unwrap();
         }

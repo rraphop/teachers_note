@@ -11,6 +11,7 @@ import { AREA_ORDER, AREA_SHORT, areaLabel, RECORD_TABS } from "../lib/labels";
 import { isNewItem, useNewSince } from "../lib/seen";
 import { useLoad, useStore } from "../lib/store";
 import type { AppSettings, Area, AttendanceRow, DraftCheck, Observation, RecordStatus, RecordTab, Student } from "../types";
+import { TextLines } from "../components/TextLines";
 
 const STATUS_TEXT: Record<RecordStatus, string> = { none: "자료 없음", refs: "참고자료만", draft: "초안", final: "최종안" };
 const STATUS_MARK: Record<RecordStatus, string> = { none: "·", refs: "○", draft: "◐", final: "●" };
@@ -115,7 +116,7 @@ function RefRow({ o, subjects, onChanged, since }: { o: Observation; subjects: s
     <li className={`ref-row ${o.excluded ? "excluded" : ""}`}>
       <div className="ref-main">
         <span className="ref-date">{fmtDate(o.observed_on)}</span>
-        <span className="ref-text">{o.content}</span>
+        <span className="ref-text"><TextLines text={o.content} /></span>
         {o.excluded && <span className="tag">뺌</span>}
         {isNewItem(o, since) && <span className="new-tag" title="지난번에 본 뒤 AI가 넣은 참고자료">새</span>}
       </div>
@@ -123,7 +124,7 @@ function RefRow({ o, subjects, onChanged, since }: { o: Observation; subjects: s
         {o.note_raw && (
           <details className="inline-raw">
             <summary>원문</summary>
-            <p className="raw-text">{o.note_raw}</p>
+            <p className="raw-text"><TextLines text={o.note_raw} /></p>
             {o.note_id && (
               <button className="link" onClick={() => navigate("notes", { noteId: o.note_id ?? undefined })}>
                 기록으로 가기 ({fmtDateTime(o.note_created_at)})

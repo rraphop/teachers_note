@@ -54,7 +54,7 @@ try {
     );
     const backups = await app.invoke("list_backups");
     const up = backups.filter((b) => b.kind.startsWith("before-update"));
-    check("‘업데이트 전’ 백업이 생김 (형식 8에서)", up.some((b) => b.kind === "before-update-v8"), backups.map((b) => b.kind).join(", "));
+    check("‘업데이트 전’ 백업이 생김 (지난 빌드의 데이터 형식에서)", up.length > 0, backups.map((b) => b.kind).join(", "));
     const ov = await app.invoke("today_overview");
     check("업데이트 전 항목은 새 항목으로 세지 않음", JSON.stringify(ov.new_counts) === JSON.stringify({ records: 0, duties: 0, tasks: 0, students: 0 }), JSON.stringify(ov.new_counts));
     await app.nav("학생 명렬표");

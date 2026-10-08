@@ -297,6 +297,12 @@ function RuntimePanel({ settings, onSettings }: { settings: AppSettings; onSetti
         </button>
       </div>
       {s?.state === "failed" && <p className="error-box">{s.message}</p>}
+      {st?.device && s?.state === "ready" && (
+        <p className="hint" data-testid="ai-device">
+          계산 장치: <b>{st.device === "CPU" ? "CPU" : `GPU — ${st.device}`}</b>
+          {st.device === "CPU" && settings.ai_device !== "cpu" && st.gpus.length > 0 && " (쓸 만한 외장 그래픽카드가 없거나 메모리가 모자라 CPU 로 돕니다)"}
+        </p>
+      )}
       {st && !st.runtime_found && <p className="error-box">AI 실행 구성요소(runtime 폴더)를 찾지 못했습니다. 압축을 풀 때 runtime 폴더까지 함께 풀었는지 확인해 주세요.</p>}
       {st && st.local_only !== null && (
         <p className={`hint ${st.local_only ? "ok" : "warn"}`}>
@@ -312,6 +318,17 @@ function RuntimePanel({ settings, onSettings }: { settings: AppSettings; onSetti
                 {m === 0 ? "내리지 않음" : `${m}분 뒤`}
               </option>
             ))}
+          </select>
+        </label>
+        <label className="field">
+          <span>AI 계산 장치</span>
+          <select
+            value={settings.ai_device ?? "auto"}
+            onChange={(e) => onSettings({ ...settings, ai_device: e.target.value === "cpu" ? "cpu" : "auto" })}
+            title="자동: 그래픽카드(외장)가 있고 메모리가 넉넉하면 GPU 로 빠르게, 없거나 실패하면 CPU 로 돕니다. 바꾸면 다음에 AI 엔진을 켤 때부터 적용됩니다."
+          >
+            <option value="auto">자동 — 그래픽카드가 있으면 GPU (권장)</option>
+            <option value="cpu">CPU 만</option>
           </select>
         </label>
         <label className="field">
@@ -537,10 +554,10 @@ export function SettingsPage() {
                 <button onClick={() => void testNotify()}>테스트 알림 보내기</button>
                 {testMsg && <span className={testMsg.startsWith("알림 실패") ? "err" : "ok"}>{testMsg}</span>}
               </div>
-              <label className="check">
-                <input type="checkbox" checked={settings.close_to_tray} onChange={(e) => void saveSettings({ ...settings, close_to_tray: e.target.checked })} />
-                창을 닫아도 알림 영역(시계 옆)에서 계속 실행
-              </label>
+              <p className="hint">
+                창의 X 를 눌러도 꺼지지 않고 알림 영역(시계 옆)에 남아 알림과 AI 정리를 계속합니다. 아이콘을 두 번 누르면 창이 열리고, 아이콘 메뉴에서 ‘기록하기’로 작은 입력창만 띄우거나
+                ‘종료하기’로 완전히 끌 수 있습니다.
+              </p>
               <label className="check">
                 <input type="checkbox" checked={info.data?.autostart ?? false} onChange={(e) => void toggleAutostart(e.target.checked)} />
                 Windows에 로그인하면 교무수첩을 자동으로 실행 (왼쪽 메뉴 ‘설정’ 아래에서도 켜고 끌 수 있습니다)

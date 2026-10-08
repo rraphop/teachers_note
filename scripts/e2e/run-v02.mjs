@@ -169,12 +169,14 @@ try {
   await sleep(500);
   await app.click("학급명렬표", ".seg button");
   await sleep(600);
+  // 학생 추가 줄 (3차 3번): 학급은 학급이 생기면 드롭다운, 처음엔 입력칸
   const addRow = async (cls, num, name) => {
-    const inputs = `document.querySelectorAll('.add-row input')`;
-    await app.evaluate(`window.__e2e.setValue(${inputs}[0], '${cls}')`);
-    await app.evaluate(`window.__e2e.setValue(${inputs}[1], '${num}')`);
-    await app.evaluate(`window.__e2e.setValue(${inputs}[2], '${name}')`);
-    await app.evaluate(`${inputs}[2].dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))`);
+    const q = (label) => `document.querySelector('.add-row [aria-label="${label}"]')`;
+    await app.evaluate(`window.__e2e.setValue(${q("추가할 학생의 학급")} || ${q("새 학급")}, '${cls}')`);
+    await sleep(150);
+    await app.evaluate(`window.__e2e.setValue(${q("추가할 학생의 번호")}, '${num}')`);
+    await app.evaluate(`window.__e2e.setValue(${q("추가할 학생의 이름")}, '${name}')`);
+    await app.evaluate(`${q("추가할 학생의 이름")}.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))`);
     await sleep(600);
   };
   await addRow("2-1", "3", "홍길동");

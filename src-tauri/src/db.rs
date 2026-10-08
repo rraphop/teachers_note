@@ -26,6 +26,7 @@ const MIGRATIONS: &[(i64, &str)] = &[
     (7, include_str!("../migrations/0007_tt_color_scopes.sql")),
     (8, include_str!("../migrations/0008_memos.sql")),
     (9, include_str!("../migrations/0009_profile.sql")),
+    (10, include_str!("../migrations/0010_task_done_records.sql")),
 ];
 
 pub fn latest_version() -> i64 {
@@ -373,7 +374,7 @@ mod tests {
         }
         let db = Db::open(&path).unwrap();
         db.with(|c| {
-            assert_eq!(c.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))?, 9);
+            assert_eq!(c.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))?, latest_version());
             let rows: Vec<(i64, String, String)> = {
                 let mut st = c.prepare("SELECT student_id, relation, phone FROM student_contacts")?;
                 st.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?.collect::<Result<_, _>>()?

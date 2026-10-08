@@ -7,7 +7,7 @@
 //! - Windows Job Object 로 앱이 비정상 종료해도 자식 프로세스가 함께 끝난다
 //! - sidecar 출력은 메모리에만 잠시 두고 파일로 남기지 않는다 (학생 이름·원문 보호)
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::io::{BufRead, BufReader};
 use std::net::TcpListener;
@@ -90,7 +90,58 @@ pub struct LaunchConfig {
     pub size_bytes: u64,
     pub ctx: u32,
     pub threads: u32,
-    pub gpu_layers: i32,
+    /// AI 계산 장치: 자동(쓸 만한 그래픽카드가 있으면 GPU) 또는 CPU 만
+    pub device: DeviceMode,
+}
+
+/// AI 계산 장치 설정
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum DeviceMode {
+    /// 쓸 만한 그래픽카드(Vulkan)가 있으면 GPU, 없거나 실패하면 CPU
+    #[default]
+    Auto,
+    /// 늘 CPU
+    Cpu,
+}
+
+/// 엔진이 알려 준 그래픽카드 하나 (`llama-server --list-devices`)
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct GpuDevice {
+    /// 엔진 안 이름 ("Vulkan0")
+    pub id: String,
+    pub name: String,
+    pub total_mib: u64,
+    pub free_mib: u64,
+    /// CPU 에 붙은 내장 그래픽 (작은 모델은 CPU 보다 느릴 수 있어 고르지 않는다)
+    pub integrated: bool,
+}
+
+/// `--list-devices` 출력에서 장치 목록을 읽는다 ("  Vulkan0: NVIDIA GeForce RTX 4070 (12282 MiB, 11000 MiB free)")
+pub fn parse_devices(out: &str) -> Vec<GpuDevice> {
+    static RE: std::sync::LazyLock<regex::Regex> =
+        std::sync::LazyLock::new(|| regex::Regex::new(r"^\s*([A-Za-z]+\d+):\s*(.+?)\s*\((\d+)\s*MiB,\s*(\d+)\s*MiB free\)\s*$").unwrap());
+    out.lines()
+        .filter_map(|l| RE.captures(l))
+        .map(|c| {
+            let name = c[2].trim().to_string();
+            GpuDevice { id: c[1].to_string(), integrated: is_integrated_gpu(&name), name, total_mib: c[3].parse().unwrap_or(0), free_mib: c[4].parse().unwrap_or(0) }
+        })
+        .collect()
+}
+
+/// 이름으로 본 내장 그래픽·소프트웨어 장치 (모델 번호 없이 "Graphics" 로 끝나는 것 등)
+pub fn is_integrated_gpu(name: &str) -> bool {
+    static RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(r"(?i)uhd graphics|iris|hd graphics|intel\(r\) graphics|radeon\(tm\) graphics|radeon graphics|vega \d+ graphics|arc\(tm\) graphics|microsoft basic|llvmpipe|swiftshader|lavapipe").unwrap()
+    });
+    RE.is_match(name.trim())
+}
+
+/// 모델을 통째로 올릴 수 있는 외장 그래픽카드 중 여유 메모리가 가장 큰 것 (없으면 CPU)
+pub fn pick_gpu(devs: &[GpuDevice], model_bytes: u64) -> Option<GpuDevice> {
+    let need_mib = (model_bytes as f64 * 1.2 / 1_048_576.0) as u64 + 1536;
+    devs.iter().filter(|d| !d.integrated && d.free_mib >= need_mib).max_by_key(|d| d.free_mib).cloned()
 }
 
 #[derive(Debug, Clone)]
@@ -128,6 +179,39 @@ pub fn classify_failure(log: &[String], exit_code: Option<i32>) -> FailKind {
     } else {
         FailKind::Crashed
     }
+}
+
+/// `llama-server --list-devices` 로 그래픽카드를 묻는다 (창 없이, 15초 안에)
+fn probe_devices(dir: &std::path::Path) -> Vec<GpuDevice> {
+    let exe = dir.join(crate::paths::server_exe_name());
+    let mut cmd = Command::new(&exe);
+    cmd.current_dir(dir).arg("--list-devices").stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x0800_0000);
+    }
+    let Ok(mut child) = cmd.spawn() else { return vec![] };
+    let started = Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => break,
+            Ok(None) if started.elapsed() < Duration::from_secs(15) => std::thread::sleep(Duration::from_millis(100)),
+            _ => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return vec![];
+            }
+        }
+    }
+    let mut out = String::new();
+    if let Some(mut o) = child.stdout.take() {
+        let _ = std::io::Read::read_to_string(&mut o, &mut out);
+    }
+    if let Some(mut e) = child.stderr.take() {
+        let _ = std::io::Read::read_to_string(&mut e, &mut out);
+    }
+    parse_devices(&out)
 }
 
 fn free_port() -> Option<u16> {
@@ -221,6 +305,12 @@ struct Proc {
 }
 
 pub struct Runtime {
+    /// 엔진이 알려 준 그래픽카드 (처음 켤 때 한 번 묻는다)
+    devices: Mutex<Option<Vec<GpuDevice>>>,
+    /// GPU 로 켜다 실패했으면 이번 실행 동안은 CPU 만 쓴다
+    gpu_failed: std::sync::atomic::AtomicBool,
+    /// 지금 엔진이 쓰는 장치 ("CPU" 또는 그래픽카드 이름)
+    active_device: Mutex<Option<String>>,
     state: Mutex<RuntimeState>,
     proc: Mutex<Option<Proc>>,
     infer: Mutex<()>,
@@ -235,6 +325,9 @@ const LOG_TAIL: usize = 120;
 impl Runtime {
     pub fn new(runtime_dir: Option<PathBuf>, on_change: impl Fn(&RuntimeState) + Send + Sync + 'static) -> Runtime {
         Runtime {
+            devices: Mutex::new(None),
+            gpu_failed: std::sync::atomic::AtomicBool::new(false),
+            active_device: Mutex::new(None),
             state: Mutex::new(RuntimeState::Stopped),
             proc: Mutex::new(None),
             infer: Mutex::new(()),
@@ -264,6 +357,50 @@ impl Runtime {
         (self.on_change)(&s);
     }
 
+    /// 지금 엔진이 쓰는 계산 장치 ("CPU" 또는 그래픽카드 이름, 엔진이 꺼져 있으면 None)
+    pub fn active_device(&self) -> Option<String> {
+        if self.proc.lock().unwrap_or_else(|e| e.into_inner()).is_none() {
+            return None;
+        }
+        self.active_device.lock().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+
+    /// 엔진에게 쓸 수 있는 그래픽카드를 묻는다 (한 번만, 15초 안에 답이 없으면 없음으로 본다)
+    pub fn devices(&self) -> Vec<GpuDevice> {
+        if let Some(d) = self.devices.lock().unwrap_or_else(|e| e.into_inner()).clone() {
+            return d;
+        }
+        let found = self.runtime_dir().map(|dir| probe_devices(&dir)).unwrap_or_default();
+        crate::logging::info(&format!(
+            "AI 계산 장치: {}",
+            if found.is_empty() { "그래픽카드 없음 (CPU)".to_string() } else { found.iter().map(|d| format!("{} {}MiB{}", d.name, d.free_mib, if d.integrated { " 내장" } else { "" })).collect::<Vec<_>>().join(", ") }
+        ));
+        *self.devices.lock().unwrap_or_else(|e| e.into_inner()) = Some(found.clone());
+        found
+    }
+
+    /// 이미 물어본 그래픽카드 목록 (묻지 않았으면 빈 목록 — 상태 표시용, 엔진을 새로 띄우지 않는다)
+    pub fn cached_devices(&self) -> Vec<GpuDevice> {
+        self.devices.lock().unwrap_or_else(|e| e.into_inner()).clone().unwrap_or_default()
+    }
+
+    /// 이번에 켤 장치: 자동이면 모델을 올릴 수 있는 외장 그래픽카드, 아니면 CPU
+    fn choose_gpu(&self, cfg: &LaunchConfig) -> Option<GpuDevice> {
+        if cfg.device == DeviceMode::Cpu || self.gpu_failed.load(std::sync::atomic::Ordering::Relaxed) {
+            return None;
+        }
+        pick_gpu(&self.devices(), cfg.size_bytes)
+    }
+
+    /// 엔진이 추론 중에 죽었을 때: GPU 를 쓰고 있었으면 이번 실행 동안은 CPU 로 켠다
+    fn note_gpu_crash(&self) {
+        let dev = self.active_device.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        if dev.as_deref().is_some_and(|d| d != "CPU") {
+            crate::logging::warn("GPU 로 돌던 AI 엔진이 멈춰 다음부터 CPU 로 켭니다.");
+            self.gpu_failed.store(true, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
+
     pub fn loaded_model(&self) -> Option<String> {
         self.proc.lock().unwrap_or_else(|e| e.into_inner()).as_ref().map(|p| p.model_id.clone())
     }
@@ -291,32 +428,40 @@ impl Runtime {
             let _ = old.child.kill();
             let _ = old.child.wait();
         }
-        let mut last_err = None;
-        for attempt in 0..2 {
-            match self.spawn(cfg) {
+        let mut gpu = self.choose_gpu(cfg);
+        let mut port_retry = true;
+        let e = loop {
+            match self.spawn(cfg, gpu.as_ref()) {
                 Ok(p) => {
                     let ep = Endpoint { port: p.port, api_key: p.api_key.clone(), pid: p.child.id() };
                     *guard = Some(p);
+                    let dev = gpu.as_ref().map(|g| g.name.clone()).unwrap_or_else(|| "CPU".into());
+                    crate::logging::info(&format!("AI 엔진 시작: {dev}"));
+                    *self.active_device.lock().unwrap_or_else(|e| e.into_inner()) = Some(dev);
                     self.touch();
                     self.set_state(RuntimeState::Ready { model_id: cfg.model_id.clone(), port: ep.port, pid: ep.pid });
                     return Ok(ep);
                 }
+                // 포트 충돌은 다른 포트로 한 번 더 시도한다
+                Err(e) if e.kind == FailKind::PortConflict && port_retry => port_retry = false,
                 Err(e) => {
-                    // 포트 충돌은 다른 포트로 한 번 더 시도한다
-                    let retry = e.kind == FailKind::PortConflict && attempt == 0;
-                    last_err = Some(e);
-                    if !retry {
-                        break;
+                    // GPU 로 켜다 실패하면(드라이버·메모리 등) 이번 실행 동안은 CPU 로 바꿔 다시 켠다
+                    if !matches!(e.kind, FailKind::ModelMissing | FailKind::RuntimeMissing) {
+                        if let Some(g) = gpu.take() {
+                            crate::logging::warn(&format!("GPU({})로 AI 엔진을 켜지 못해 CPU 로 다시 켭니다: {}", g.name, e.message));
+                            self.gpu_failed.store(true, std::sync::atomic::Ordering::Relaxed);
+                            continue;
+                        }
                     }
+                    break e;
                 }
             }
-        }
-        let e = last_err.unwrap_or_else(|| RuntimeError::new(FailKind::Crashed));
+        };
         self.set_state(RuntimeState::Failed { kind: e.kind, message: e.message.clone() });
         Err(e)
     }
 
-    fn spawn(&self, cfg: &LaunchConfig) -> Result<Proc, RuntimeError> {
+    fn spawn(&self, cfg: &LaunchConfig, gpu: Option<&GpuDevice>) -> Result<Proc, RuntimeError> {
         let Some(dir) = self.runtime_dir() else { return Err(RuntimeError::new(FailKind::RuntimeMissing)) };
         let exe = dir.join(crate::paths::server_exe_name());
         if !exe.is_file() {
@@ -339,7 +484,11 @@ impl Runtime {
             .args(["--ctx-size", &cfg.ctx.to_string()])
             .args(["--parallel", "1"])
             .args(["--threads", &cfg.threads.to_string()])
-            .args(["--n-gpu-layers", &cfg.gpu_layers.to_string()])
+            // GPU: 모델 전체를 그 그래픽카드 하나에 올린다 / CPU: 그래픽카드를 아예 쓰지 않는다
+            .args(match gpu {
+                Some(g) => ["--device".to_string(), g.id.clone(), "--n-gpu-layers".to_string(), "999".to_string()],
+                None => ["--device".to_string(), "none".to_string(), "--n-gpu-layers".to_string(), "0".to_string()],
+            })
             .args(["--cache-ram", "0"])
             .args(["--reasoning", "off"])
             .arg("--no-webui")
@@ -426,6 +575,7 @@ impl Runtime {
                     }
                 };
                 if dead {
+                    self.note_gpu_crash();
                     let log: Vec<String> = self.log_tail.lock().unwrap_or_else(|e| e.into_inner()).iter().cloned().collect();
                     let kind = classify_failure(&log, None);
                     self.stop();
@@ -477,6 +627,7 @@ impl Runtime {
                     }
                 };
                 if dead {
+                    self.note_gpu_crash();
                     let log: Vec<String> = self.log_tail.lock().unwrap_or_else(|e| e.into_inner()).iter().cloned().collect();
                     let kind = classify_failure(&log, None);
                     self.stop();
@@ -629,7 +780,7 @@ mod tests {
     #[test]
     fn missing_runtime_is_reported() {
         let rt = Runtime::new(None, |_| {});
-        let cfg = LaunchConfig { model_id: "x".into(), model_path: "nope.gguf".into(), size_bytes: 1, ctx: 2048, threads: 2, gpu_layers: 0 };
+        let cfg = LaunchConfig { model_id: "x".into(), model_path: "nope.gguf".into(), size_bytes: 1, ctx: 2048, threads: 2, device: DeviceMode::Cpu };
         let e = rt.ensure_ready(&cfg).unwrap_err();
         assert_eq!(e.kind, FailKind::RuntimeMissing);
         assert!(matches!(rt.state(), RuntimeState::Failed { kind: FailKind::RuntimeMissing, .. }));
@@ -639,5 +790,22 @@ mod tests {
     fn api_keys_are_random() {
         assert_ne!(new_api_key(), new_api_key());
         assert_eq!(new_api_key().len(), 48);
+    }
+
+    #[test]
+    fn picks_discrete_gpu_with_room() {
+        let out = "ggml_vulkan: Found 2 Vulkan devices:\nAvailable devices:\n  Vulkan0: NVIDIA GeForce RTX 4070 Ti SUPER (16061 MiB, 15293 MiB free)\n  Vulkan1: AMD Radeon(TM) Graphics (16171 MiB, 15363 MiB free)\n";
+        let d = parse_devices(out);
+        assert_eq!(d.len(), 2);
+        assert!(!d[0].integrated && d[1].integrated, "내장 그래픽은 고르지 않는다");
+        let four_b = 2_740_937_888;
+        assert_eq!(pick_gpu(&d, four_b).map(|g| g.id), Some("Vulkan0".into()));
+        // 여유 메모리가 모자라면 CPU
+        let small = parse_devices("  Vulkan0: NVIDIA GeForce GTX 1050 (2048 MiB, 1800 MiB free)");
+        assert_eq!(pick_gpu(&small, four_b), None);
+        // 내장 그래픽뿐이면 CPU
+        let igpu = parse_devices("  Vulkan0: Intel(R) UHD Graphics 770 (8000 MiB, 7900 MiB free)");
+        assert!(igpu[0].integrated && pick_gpu(&igpu, four_b).is_none());
+        assert!(parse_devices("Available devices:\n").is_empty());
     }
 }

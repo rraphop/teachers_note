@@ -49,11 +49,23 @@ function AiStatus() {
   const { navigate } = useStore();
   const cat = useLoad(() => api.modelCatalog(), []);
   const [rt, setRt] = useState<RuntimeState | null>(null);
+  const [device, setDevice] = useState<string | null>(null);
   useEffect(() => {
-    api.runtimeStatus().then((s) => setRt(s.state)).catch(() => undefined);
+    const status = () =>
+      api
+        .runtimeStatus()
+        .then((s) => {
+          setRt(s.state);
+          setDevice(s.device);
+        })
+        .catch(() => undefined);
+    void status();
     let un: (() => void) | null = null;
     let alive = true;
-    void listen<RuntimeState>("runtime-state", (e) => setRt(e.payload)).then((u) => (alive ? (un = u) : u()));
+    void listen<RuntimeState>("runtime-state", (e) => {
+      setRt(e.payload);
+      void status();
+    }).then((u) => (alive ? (un = u) : u()));
     return () => {
       alive = false;
       un?.();
@@ -66,7 +78,7 @@ function AiStatus() {
     text = `${sel.model.tier_label} · ${sel.model.name}`;
     cls = rt?.state === "ready" ? "ready" : rt?.state === "starting" ? "starting" : rt?.state === "failed" ? "failed" : "idle";
   }
-  const sub = !sel ? "기록은 저장됩니다" : rt?.state === "ready" ? "AI 준비됨" : rt?.state === "starting" ? "AI 켜는 중…" : rt?.state === "failed" ? "AI 문제 — 눌러서 확인" : "필요할 때 자동으로 켜짐";
+  const sub = !sel ? "기록은 저장됩니다" : rt?.state === "ready" ? `AI 준비됨${device ? ` · ${device === "CPU" ? "CPU" : "GPU"}` : ""}` : rt?.state === "starting" ? "AI 켜는 중…" : rt?.state === "failed" ? "AI 문제 — 눌러서 확인" : "필요할 때 자동으로 켜짐";
   return (
     <button className={`ai-status ${cls}`} onClick={() => navigate("settings", { section: "models" })}>
       <span className="dot" />

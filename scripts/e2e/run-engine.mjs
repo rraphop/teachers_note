@@ -41,16 +41,19 @@ async function startEngine(install) {
 
 let cur = null;
 try {
-  // ── 1. 보통으로 닫기 (창 닫기 → 프로그램 끝 → 엔진도 끝) ──
+  // ── 1. 보통으로 끄기 (트레이 '종료하기' → 프로그램 끝 → 엔진도 끝). 창의 X 는 트레이로 숨기기만 한다 (3차 2번) ──
   cur = await startEngine(true);
   check("엔진이 하나 뜸 (프로그램의 자식, 상태의 pid 와 같음)", cur.engines.length === 1 && cur.engines[0] === cur.readyPid, `엔진 ${cur.engines.join(",")} · ${cur.ms}ms`);
   check("엔진은 이 PC 안(127.0.0.1)에서만 연결 받음", cur.status.local_only === true, JSON.stringify(cur.status.listening));
   const e1 = cur.readyPid;
-  cur.app.close();
   ps(`(Get-Process -Id ${cur.child.pid}).CloseMainWindow() | Out-Null`);
+  await sleep(1500);
+  check("창의 X 는 끄지 않고 트레이로 숨김 (엔진도 그대로)", alive(cur.child.pid) && alive(e1), "");
+  await cur.app.evaluate(`(window.__e2e.invoke('quit_app').catch(() => null), true)`).catch(() => null);
+  cur.app.close();
   const appGone = await waitFor(() => (!alive(cur.child.pid) ? true : null), { label: "프로그램 닫힘", timeout: 20000, interval: 500 }).catch(() => false);
   const engGone = await waitFor(() => (!alive(e1) ? true : null), { label: "엔진 닫힘", timeout: 20000, interval: 500 }).catch(() => false);
-  check("창을 닫으면 프로그램과 엔진이 함께 끝남", appGone && engGone, `프로그램 ${appGone ? "끝" : "남음"} · 엔진 ${engGone ? "끝" : "남음"}`);
+  check("‘종료하기’ → 프로그램과 엔진이 함께 끝남", appGone && engGone, `프로그램 ${appGone ? "끝" : "남음"} · 엔진 ${engGone ? "끝" : "남음"}`);
   cur = null;
 
   // ── 2. 강제로 끝내기 (작업 관리자 '작업 끝내기' = TerminateProcess) ──

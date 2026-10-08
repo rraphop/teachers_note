@@ -31,12 +31,13 @@ export function launch(exe, { port = 9333, dataRoot, extraEnv = {} } = {}) {
   return child;
 }
 
-export async function connect(port = 9333, timeout = 40000) {
+// pick: 어느 창에 붙을지 (기본은 큰 창 — 트레이 '기록하기'의 작은 입력창(#quick)은 빼고)
+export async function connect(port = 9333, timeout = 40000, pick = (t) => !t.url.includes("#quick")) {
   const page = await waitFor(
     async () => {
       const r = await fetch(`http://127.0.0.1:${port}/json/list`);
       const list = await r.json();
-      return list.find((t) => t.type === "page" && /tauri\.localhost|index\.html/.test(t.url));
+      return list.find((t) => t.type === "page" && /tauri\.localhost|index\.html/.test(t.url) && pick(t));
     },
     { timeout, label: "WebView2 디버그 포트" },
   );

@@ -30,6 +30,7 @@ function toAgenda(t: Task): AgendaItem {
     memo: "",
     day_kind: "",
     day_color: null,
+    done_at: t.done_at,
   };
 }
 

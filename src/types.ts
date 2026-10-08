@@ -77,6 +77,10 @@ export interface Note {
   track: NoteTrack | null;
   /** 정리된 업무기록인가 */
   is_work: boolean;
+  /** 할 일을 끝내 남긴 완료 기록이면 그 할 일 */
+  from_task_id: number | null;
+  /** 그 할 일이 나온 원래 기록 */
+  ref_note_id: number | null;
 }
 
 export type NoteTrack = "general" | "work";
@@ -549,6 +553,10 @@ export interface DutyLog {
   remind_text: string;
   next_reminder: string | null;
   created_at: string;
+  /** 할 일을 끝내 남긴 완료 기록이면 그 할 일 */
+  from_task_id: number | null;
+  /** 그 할 일이 나온 원래 기록 */
+  ref_note_id: number | null;
 }
 
 export interface DutyLogInput {
@@ -620,6 +628,8 @@ export interface AgendaItem {
   day_kind: string;
   /** 휴일·휴업일·방학이면 설정에서 고른 색 이름 */
   day_color: string | null;
+  /** 끝낸 할 일이면 끝낸 시각 */
+  done_at?: string | null;
 }
 
 export interface ReminderLog {
@@ -793,6 +803,18 @@ export interface RuntimeStatus {
   listening: string[];
   local_only: boolean | null;
   diagnostics: string[];
+  /** 지금 엔진이 쓰는 계산 장치 ("CPU" 또는 그래픽카드 이름) */
+  device: string | null;
+  /** 이 PC 에서 찾은 그래픽카드 (엔진에 물어본 뒤에만) */
+  gpus: GpuDevice[];
+}
+
+export interface GpuDevice {
+  id: string;
+  name: string;
+  total_mib: number;
+  free_mib: number;
+  integrated: boolean;
 }
 
 export interface AppSettings {
@@ -806,6 +828,8 @@ export interface AppSettings {
   /** 창 투명도(%) 0~70 (setWindowTransparency 로만 바꾼다) */
   window_transparency: number;
   threads: number | null;
+  /** AI 계산 장치: auto(그래픽카드가 있으면 GPU) | cpu */
+  ai_device: "auto" | "cpu";
   onboarding_done: boolean;
   roster_columns: RosterColumns;
   birthdays_on_calendar: boolean;

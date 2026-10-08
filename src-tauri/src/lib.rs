@@ -84,6 +84,73 @@ fn show_main(app: &tauri::AppHandle) {
     }
 }
 
+/// 창을 숨기고 트레이에 남는다. 처음 한 번만 "창을 닫아도 트레이에서 계속 실행됩니다" 알림 (3차 2번)
+fn hide_to_tray(app: &tauri::AppHandle) {
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.hide();
+    }
+    let Some(st) = app.try_state::<Arc<AppState>>() else { return };
+    let first = st
+        .db
+        .with(|c| {
+            if db::get_setting(c, "tray_notice_shown")?.is_some() {
+                return Ok(false);
+            }
+            db::set_setting(c, "tray_notice_shown", &util::fmt_dt(util::now()))?;
+            Ok(true)
+        })
+        .unwrap_or(false);
+    if first && !paths::is_test_run() {
+        let _ = notify::show("창을 닫아도 트레이에서 계속 실행됩니다", "알림과 AI 정리는 계속됩니다. 다시 열려면 시계 옆 교무수첩 아이콘을 두 번 누르고, 완전히 끄려면 아이콘 메뉴의 '종료하기'를 누르세요.");
+    }
+}
+
+/// 트레이 '기록하기': 전체 창 대신 작은 입력창만 띄운다 (적고 Enter → 저장 후 닫힘)
+pub fn open_quick(app: &tauri::AppHandle) {
+    if let Some(w) = app.get_webview_window("quick") {
+        let _ = w.show();
+        let _ = w.set_focus();
+        return;
+    }
+    let Some(st) = app.try_state::<Arc<AppState>>() else { return };
+    let built = WebviewWindowBuilder::new(app, "quick", WebviewUrl::App("index.html#quick".into()))
+        .title("교무수첩 — 빠른 기록")
+        .inner_size(520.0, 176.0)
+        .resizable(false)
+        .maximizable(false)
+        .minimizable(false)
+        .always_on_top(true)
+        .skip_taskbar(true)
+        .center()
+        .focused(true)
+        .data_directory(st.paths.webview_dir.clone())
+        .build();
+    if let Err(e) = built {
+        logging::warn(&format!("빠른 기록 창을 열지 못했습니다: {e}"));
+    }
+}
+
+/// 트레이 '종료하기': AI 가 정리 중인 기록이 있으면 묻고 끈다
+fn quit_with_confirm(app: &tauri::AppHandle) {
+    use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
+    let pending = app.try_state::<Arc<AppState>>().map(|s| s.queued.lock().unwrap_or_else(|e| e.into_inner()).len()).unwrap_or(0);
+    if pending == 0 {
+        app.exit(0);
+        return;
+    }
+    let h = app.clone();
+    app.dialog()
+        .message(format!("AI가 정리 중인 기록 {pending}건이 있습니다. 종료할까요?\n(원문은 저장되어 있고, 다음에 켜면 이어서 정리합니다)"))
+        .title("로컬 AI 교무수첩")
+        .kind(MessageDialogKind::Warning)
+        .buttons(MessageDialogButtons::OkCancelCustom("종료하기".into(), "취소".into()))
+        .show(move |ok| {
+            if ok {
+                h.exit(0);
+            }
+        });
+}
+
 pub fn run() {
     let args: Vec<String> = std::env::args().collect();
     // 패키징 단계에서 모델 카탈로그를 파일로 내보낸다 (창을 띄우지 않음)
@@ -246,17 +313,26 @@ pub fn run() {
             #[cfg(not(windows))]
             let _ = (win, transparency);
 
-            // 알림 영역(트레이) 아이콘: 창을 닫아도 알림을 받으려면 여기서 다시 열 수 있다
-            let open = MenuItem::with_id(app, "open", "교무수첩 열기", true, None::<&str>)?;
-            let quit = MenuItem::with_id(app, "quit", "종료", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&open, &quit])?;
+            // 알림 영역(트레이) 아이콘 (3차 2번): 창을 닫아도 여기 남아 알림·AI 정리를 계속한다
+            let open = MenuItem::with_id(app, "open", "열기", true, None::<&str>)?;
+            let quick = MenuItem::with_id(app, "quick", "기록하기", true, None::<&str>)?;
+            let hide = MenuItem::with_id(app, "hide", "닫기 (트레이에 남기)", true, None::<&str>)?;
+            let quit = MenuItem::with_id(app, "quit", "종료하기", true, None::<&str>)?;
+            let menu = Menu::with_items(app, &[&open, &quick, &hide, &quit])?;
             let mut tray = TrayIconBuilder::with_id("main-tray").tooltip("로컬 AI 교무수첩").menu(&menu).show_menu_on_left_click(false);
             if let Some(icon) = app.default_window_icon() {
                 tray = tray.icon(icon.clone());
             }
             tray.on_menu_event(|app, ev| match ev.id().as_ref() {
                 "open" => show_main(app),
-                "quit" => app.exit(0),
+                "quick" => open_quick(app),
+                "hide" => {
+                    if let Some(q) = app.get_webview_window("quick") {
+                        let _ = q.close();
+                    }
+                    hide_to_tray(app);
+                }
+                "quit" => quit_with_confirm(app),
                 _ => {}
             })
             .on_tray_icon_event(|tray, ev| {
@@ -313,23 +389,19 @@ pub fn run() {
                     window_fx::ensure(h.0 as isize);
                 }
             }
+            // 큰 창의 X: 끄지 않고 트레이로 숨긴다 (완전히 끄기는 트레이 메뉴 '종료하기'). 빠른 기록 창은 그냥 닫는다
             if let WindowEvent::CloseRequested { api, .. } = event {
-                let app = window.app_handle();
-                let to_tray = app
-                    .try_state::<Arc<AppState>>()
-                    .and_then(|s| s.db.with(|c| settings::load(c)).ok())
-                    .map(|s| s.close_to_tray)
-                    .unwrap_or(false);
-                if to_tray {
+                if window.label() == "main" {
                     api.prevent_close();
-                    let _ = window.hide();
-                } else {
-                    app.exit(0);
+                    hide_to_tray(window.app_handle());
                 }
             }
         })
         .invoke_handler(tauri::generate_handler![
             commands::create_note,
+            commands::open_quick_window,
+            commands::close_quick_window,
+            commands::quit_app,
             commands::list_notes,
             commands::get_note_detail,
             commands::update_note_raw,

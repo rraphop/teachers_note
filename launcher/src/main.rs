@@ -3,6 +3,9 @@
 //! 바탕화면에 이 파일 하나만 두고 실행한다. 새 버전은 "교무수첩_1.0.1.exe" 처럼 새 이름으로 받는다.
 //! (1.0 까지 쓰던 예전 이름 "교무수첩(0.9).exe" 도 알아보고 정리 대상에 넣는다)
 //!
+//! 파일 이름: 빌드·깃허브 릴리즈는 영문 "Teachers_Note_1.0.0.exe", 사용자가 받아 쓰는 이름은 "교무수첩_1.0.0.exe" (3차 7번).
+//! 두 이름 모두 같은 프로그램의 버전으로 알아본다.
+//!
 //! 1. 안에 든 프로그램 묶음(화면·AI 엔진 llama.cpp·라이선스)의 파일 목록과 SHA-256 을 읽는다.
 //! 2. 더 새로운 버전을 이미 풀어 쓴 적이 있으면(지난 버전 파일을 잘못 켠 경우) 새 버전을 쓰라고 알린다.
 //! 3. %LOCALAPPDATA%\teachers_note\program\<버전> 의 파일이 목록과 모두 같으면 바로 실행한다.
@@ -166,10 +169,12 @@ fn file_name(v: Ver) -> String {
     format!("교무수첩_{}.{}.{}.exe", v.0, v.1, v.2)
 }
 
-/// 파일 이름의 버전과 예전 이름 여부: "교무수첩_1.0.0.exe" → ((1, 0, 0), false), 예전 "교무수첩(0.61).exe" → ((0, 6, 1), true)
+/// 파일 이름의 버전과 예전 이름 여부: "교무수첩_1.0.0.exe"·"Teachers_Note_1.0.0.exe" → ((1, 0, 0), false),
+/// 예전 "교무수첩(0.61).exe" → ((0, 6, 1), true)
 fn file_ver(name: &str) -> Option<(Ver, bool)> {
     let stem = name.strip_suffix(".exe").or_else(|| name.strip_suffix(".EXE"))?;
-    if let Some(v) = stem.strip_prefix("교무수첩_") {
+    let english = stem.get(..14).filter(|p| p.eq_ignore_ascii_case("Teachers_Note_")).map(|_| &stem[14..]);
+    if let Some(v) = stem.strip_prefix("교무수첩_").or(english) {
         let mut it = v.split('.');
         let ver = (it.next()?.parse().ok()?, it.next()?.parse().ok()?, it.next()?.parse().ok()?);
         return if it.next().is_none() { Some((ver, false)) } else { None };
@@ -366,7 +371,11 @@ fn main() {
         }
     };
     let mine = parse_ver(&m.version).unwrap_or((0, 0, 0));
-    let me_name = file_name(mine);
+    // 안내에 쓰는 이 파일 이름 (받은 이름 그대로: "교무수첩_1.0.0.exe" 또는 "Teachers_Note_1.0.0.exe")
+    let me_name = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_string()))
+        .unwrap_or_else(|| file_name(mine));
     let programs = data_root().join("program");
     let dir = programs.join(&m.version);
 
@@ -374,8 +383,8 @@ fn main() {
     if let Some(newest) = newest_extracted(&programs).filter(|v| *v > mine) {
         let go = test_answer().unwrap_or_else(|| {
             ui::ask(&format!(
-                "이 파일은 지난 버전({me_name})입니다.\n이 PC에서는 이미 더 새로운 {}을 쓰고 있습니다.\n\n새 버전 파일로 실행하는 것을 권합니다. 이 파일은 지워도 됩니다.\n\n그래도 이 지난 버전으로 실행할까요?",
-                file_name(newest)
+                "이 파일은 지난 버전({me_name})입니다.\n이 PC에서는 이미 더 새로운 교무수첩 {}을 쓰고 있습니다.\n\n새 버전 파일로 실행하는 것을 권합니다. 이 파일은 지워도 됩니다.\n\n그래도 이 지난 버전으로 실행할까요?",
+                display_ver(newest)
             ))
         });
         if !go {
@@ -481,6 +490,10 @@ mod tests {
         assert_eq!(file_ver("교무수첩(0.6).exe"), Some(((0, 6, 0), true)));
         assert_eq!(file_ver("교무수첩(1.12).exe"), Some(((1, 1, 2), true)));
         assert_eq!(file_ver("teachers_note.exe"), None);
+        // 빌드·깃허브 릴리즈의 영문 이름도 같은 프로그램
+        assert_eq!(file_ver("Teachers_Note_1.0.1.exe"), Some(((1, 0, 1), false)));
+        assert_eq!(file_ver("teachers_note_1.1.0.exe"), Some(((1, 1, 0), false)));
+        assert_eq!(file_ver("Teachers_Note_1.0.exe"), None);
         assert_eq!(file_ver("교무수첩(0.6) - 복사본.exe"), None);
         assert!(file_ver("교무수첩(0.6).exe").unwrap().0 < file_ver("교무수첩(0.61).exe").unwrap().0);
         assert!(file_ver("교무수첩(0.9).exe").unwrap().0 < file_ver("교무수첩_1.0.0.exe").unwrap().0);

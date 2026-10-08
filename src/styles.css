@@ -2240,9 +2240,10 @@ pre.license-text {
   padding: 4px !important;
   background: #fbfaf6;
 }
-.add-row input {
+.add-row input,
+.add-row select {
   width: 100%;
-  min-width: 60px;
+  min-width: 0;
 }
 
 /* ───── 0.2: 시간표 ───── */
@@ -3384,7 +3385,7 @@ i.swatch {
   font-size: 0.9rem;
 }
 
-/* 학생 명렬표: 학급·번호·이름은 고정 폭으로 왼쪽에 붙박고, 선택 칸은 비율대로 */
+/* 학생 명렬표: 모든 열이 비율대로 표 폭을 채우고, 학급·번호·이름은 가로 스크롤 때 왼쪽에 붙박는다 (위치는 표의 --pin2·--pin3) */
 .roster-table {
   table-layout: fixed;
 }
@@ -3404,11 +3405,11 @@ i.swatch {
 }
 .roster-table .pin-2,
 .roster-table tbody tr:not(.add-row) > td:nth-child(2) {
-  left: 64px;
+  left: var(--pin2, 64px);
 }
 .roster-table .pin-3,
 .roster-table tbody tr:not(.add-row) > td:nth-child(3) {
-  left: 116px;
+  left: var(--pin3, 116px);
   box-shadow: 1px 0 0 var(--line);
 }
 .roster-table tr.review > td:nth-child(3) {
@@ -3715,4 +3716,50 @@ i.swatch {
 }
 .profile-history .link {
   margin-left: 6px;
+}
+
+/* 기록 줄바꿈 표시 (3차 4번): Enter 로 나눈 줄·새 날짜와 시각 앞에서 줄을 바꾸고, 줄 맨 앞 시각은 굵게 */
+.tline {
+  display: block;
+}
+.tline + .tline {
+  margin-top: 2px;
+}
+.tline-lead {
+  font-weight: 700;
+  margin-right: 2px;
+}
+
+/* 할 일 완료 기록 (3차 6번) */
+.tag.done-record {
+  background: #e6f6ec;
+  border-color: #b7e2c6;
+  color: #1f7a45;
+}
+
+/* 트레이 '기록하기' 작은 입력창 (3차 2번) */
+.quick-win {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  height: 100vh;
+  padding: 10px 12px 8px;
+  box-sizing: border-box;
+  background: var(--bg, #f6f4ee);
+}
+.quick-win textarea {
+  flex: 1;
+  resize: none;
+  font-size: 0.95rem;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.quick-hint {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+.quick-hint .err {
+  color: #b42318;
 }

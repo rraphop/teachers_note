@@ -9,6 +9,7 @@ import { ClassifyEditor } from "./ClassifyEditor";
 import { ProfileChips, ProfileQuestions } from "./ProfileParts";
 import { IconEdit, IconSpark, IconTrash } from "./Icons";
 import { confirmDialog } from "./Modal";
+import { TextLines } from "./TextLines";
 
 export function StatusBadge({ status, by }: { status: Note["status"]; by?: string | null }) {
   // 기록 전체가 시간표 문장이라 규칙으로 바로 정리한 경우
@@ -140,6 +141,16 @@ export function NoteCard({ note, highlight }: { note: Note; highlight?: boolean 
         <time dateTime={note.created_at}>{fmtDateTime(note.created_at)}</time>
         {note.raw_edited_at && <span className="muted">원문 수정 {fmtDateTime(note.raw_edited_at)}</span>}
         <span className="grow" />
+        {note.from_task_id !== null && (
+          <span className="tag done-record" title="할 일을 완료로 체크해 남긴 기록입니다. 체크를 풀면 이 기록도 지워집니다.">
+            할 일 완료
+          </span>
+        )}
+        {note.ref_note_id !== null && (
+          <button className="link" onClick={() => navigate("notes", { noteId: note.ref_note_id ?? undefined })} title="이 할 일이 나온 원래 기록으로">
+            원래 기록
+          </button>
+        )}
         <span className={`track-tag ${note.is_work ? "work" : "general"}`} title={note.track ? "직접 옮긴 기록입니다. AI가 다시 분류해도 바뀌지 않습니다." : undefined}>
           {note.is_work ? "업무기록" : "일반 기록"}
           {note.track && " · 직접 옮김"}
@@ -147,7 +158,7 @@ export function NoteCard({ note, highlight }: { note: Note; highlight?: boolean 
       </header>
       {note.summary && <p className="note-summary">{masked ? maskText(note.summary) : note.summary}</p>}
       {rawEdit === null ? (
-        <p className={`note-raw ${long && !expanded ? "clamp" : ""}`}>{masked ? maskText(note.raw_text) : note.raw_text}</p>
+        <p className={`note-raw ${long && !expanded ? "clamp" : ""}`}><TextLines text={masked ? maskText(note.raw_text) : note.raw_text} /></p>
       ) : (
         <div className="raw-edit">
           <textarea value={rawEdit} rows={Math.min(10, Math.max(3, rawEdit.split("\n").length + 1))} onChange={(e) => setRawEdit(e.target.value)} />

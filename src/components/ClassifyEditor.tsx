@@ -7,6 +7,7 @@ import type { Area, Duty, ItemKind, Note, Plan, PlanItem, PlanStudent, ReminderS
 import { DateFields, ReminderPicker } from "./Fields";
 import { IconPlus, IconTrash } from "./Icons";
 import { confirmDialog, Modal } from "./Modal";
+import { TextLines } from "./TextLines";
 
 const KINDS: ItemKind[] = ["student", "task", "event", "duty"];
 const PROFILE_LABEL: Record<string, string> = {
@@ -293,7 +294,7 @@ export function ClassifyEditor({ noteId, manual, onClose }: { noteId: number; ma
         <>
           <div className="raw-box">
             <div className="raw-head">원문 · {fmtDateTime(note.created_at)}</div>
-            <p className="raw-text">{note.raw_text}</p>
+            <p className="raw-text"><TextLines text={note.raw_text} /></p>
           </div>
           {fromRules && <p className="hint">AI 없이 규칙으로 찾은 제안을 채워 두었습니다. 확인하고 고친 뒤 저장하세요.</p>}
           {plan.guard_notes.length > 0 && (

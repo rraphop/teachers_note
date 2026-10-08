@@ -113,11 +113,12 @@ try {
   await setCols([]);
   let m = await measure();
   check(
-    "선택 항목 0개: 학급 64·번호 52·이름 96·기록 84 가 모여 있음",
-    m.heads.map((h) => h.t).join(",") === "학급,번호,이름,기록" && near(col(m, "학급").w, 64) && near(col(m, "번호").w, 52) && near(col(m, "이름").w, 96) && near(col(m, "기록").w, 84) && near(col(m, "기록").l, col(m, "이름").r),
+    // 3차 1번에서 "남는 폭은 오른쪽 여백" 규칙이 폐기됨: 이제 네 칸이 비율대로 표 폭을 채운다 (자세한 검사는 run-v10c.mjs)
+    "선택 항목 0개: 학급·번호·이름·기록 네 칸, 기록은 이름 바로 옆",
+    m.heads.map((h) => h.t).join(",") === "학급,번호,이름,기록" && near(col(m, "기록").l, col(m, "이름").r),
     JSON.stringify(m.heads.map((h) => [h.t, h.w])),
   );
-  check("  남는 폭은 표 오른쪽 여백 (가로 스크롤 없음)", m.scrollW <= m.boxW && last(m).r - m.boxL < m.boxW - 200, `표 끝 ${last(m).r - m.boxL} / 칸 ${m.boxW}`);
+  check("  표가 폭을 채우고 가로 스크롤 없음 (3차 1번)", m.scrollW <= m.boxW && near(last(m).r - m.boxL, m.boxW, 3), `표 끝 ${last(m).r - m.boxL} / 칸 ${m.boxW}`);
 
   await setCols(["전화번호", "비고"]);
   for (const w of [1920, 1280]) {
@@ -127,8 +128,8 @@ try {
     const remark = col(m, "비고");
     const rec = col(m, "기록");
     check(
-      `전화번호+비고 (${w}px): 기록 칸이 비고 바로 옆, 비고가 전화번호보다 넓고 최대 폭 이하`,
-      last(m).t === "기록" && near(rec.l, remark.r) && remark.w > phone.w && phone.w <= 160 && remark.w <= 360 && near(col(m, "이름").w, 96),
+      `전화번호+비고 (${w}px): 기록 칸이 비고 바로 옆(맨 오른쪽), 비고가 전화번호보다 넓음`,
+      last(m).t === "기록" && near(rec.l, remark.r) && remark.w > phone.w,
       JSON.stringify(m.heads.map((h) => [h.t, h.w])),
     );
     check(`  ${w}px: 가로 스크롤 없음`, m.scrollW <= m.boxW, `${m.scrollW}/${m.boxW}`);

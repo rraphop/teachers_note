@@ -9,6 +9,7 @@ import { fmtDate, fmtDateTime } from "../lib/format";
 import { isNewItem, useNewSince } from "../lib/seen";
 import { useLoad, useStore } from "../lib/store";
 import type { Duty, DutyInput, DutyLog, Task } from "../types";
+import { TextLines } from "../components/TextLines";
 
 function DutyForm({ initial, onClose, onSaved }: { initial: Duty | null; onClose: () => void; onSaved: (id: number) => void }) {
   const { toast } = useStore();
@@ -119,7 +120,7 @@ function LogRow({ l, since }: { l: DutyLog; since: string | null }) {
       <div className="grow">
         <p className="log-content">
           {isNewItem(l, since) && <span className="new-tag">새</span>}
-          {l.content}
+          <TextLines text={l.content} />
         </p>
         <div className="agenda-meta">
           <span className="muted">{fmtDateTime(l.created_at)}</span>
@@ -130,6 +131,16 @@ function LogRow({ l, since }: { l: DutyLog; since: string | null }) {
           {l.note_id && (
             <button className="link" onClick={() => navigate("notes", { noteId: l.note_id ?? undefined })}>
               원문
+            </button>
+          )}
+          {l.from_task_id !== null && (
+            <span className="tag done-record" title="할 일을 완료로 체크해 남긴 기록입니다. 체크를 풀면 이 기록도 지워집니다.">
+              할 일 완료
+            </span>
+          )}
+          {l.ref_note_id !== null && (
+            <button className="link" onClick={() => navigate("notes", { noteId: l.ref_note_id ?? undefined })} title="이 할 일이 나온 원래 기록으로">
+              원래 기록
             </button>
           )}
         </div>

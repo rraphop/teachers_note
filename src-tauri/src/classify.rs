@@ -10,6 +10,8 @@ use crate::dates::{self, DateHit};
 use crate::text::{self, Span};
 use crate::util;
 use chrono::NaiveDate;
+use once_cell::sync::Lazy;
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -203,7 +205,25 @@ fn item_title(raw: &str, span: Span, date: Option<&DateHit>, time: Option<&dates
             remove.push((s - span.start, e - span.start));
         }
     }
-    analysis::title_from(seg, &remove)
+    strip_condition(&analysis::title_from(seg, &remove))
+}
+
+/// 할 일 제목 앞의 조건("답 오면", "회신 오는 대로")은 떼어 낸다 — "답 오면 교장 보고" → "교장 보고"
+fn strip_condition(title: &str) -> String {
+    static RE_COND: Lazy<Regex> = Lazy::new(|| {
+        Regex::new(r"^\s*(?:[^\s]+\s+){0,2}?[^\s]*(?:오면|되면|나오면|받으면|끝나면|들어오면|있으면|없으면|생기면|정해지면|확정되면|마치면|오는\s*대로|되는\s*대로)\s+").unwrap()
+    });
+    let t = RE_COND.replace(title, "").trim().to_string();
+    if t.is_empty() { title.to_string() } else { t }
+}
+
+/// 할 일의 날짜: 그 일을 한(지난) 시각은 마감이 아니다. "~까지" 같은 마감 표현이 있거나 오늘 이후 날짜일 때만 쓴다.
+fn task_when(mut r: Resolved, today: NaiveDate) -> Resolved {
+    if r.date.as_ref().is_some_and(|d| !d.deadline && d.date < today) {
+        r.date = None;
+        r.time = None;
+    }
+    r
 }
 
 struct Resolved {
@@ -435,6 +455,7 @@ fn rule_plan_from(a: &Analysis, ctx: &Ctx) -> Plan {
         let c = &a.clauses[i];
         let r = resolve_when(a, c.span, true);
         let title = item_title(raw, c.span, r.date.as_ref().filter(|d| c.span.contains(d.start)), r.time.as_ref());
+        let r = task_when(r, a.today);
         let mut it = with_when(blank(ItemKind::Task, title, ItemOrigin::Rule), &r);
         it.duty_id = c.duties.first().copied().or(single_duty);
         for &m in &c.students {
@@ -834,6 +855,7 @@ pub fn guard_llm(raw: &str, out: &LlmOutput, ctx: &Ctx) -> Plan {
             ItemKind::Task => {
                 let date_in_span = r.date.as_ref().filter(|d| span.contains(d.start));
                 it.text = item_title(raw, span, date_in_span, r.time.as_ref());
+                let r = task_when(r, ctx.today);
                 it = with_when(it, &r);
             }
             ItemKind::Duty => {
@@ -1096,6 +1118,48 @@ mod tests {
         let s = |id, name: &str, l: &str, n| RosterEntry { id, name: name.into(), class_label: Some(l.into()), number: Some(n) };
         let c = |l: &str| RosterEntry { id: 0, name: String::new(), class_label: Some(l.into()), number: None };
         vec![s(1, "심청", "1-1", 1), s(2, "전우치", "1-1", 2), c("1-1"), c("2-1"), c("3-1")]
+    }
+
+    #[test]
+    fn done_actions_are_not_tasks() {
+        let c = ctx(&[], &[]);
+        // 이미 한 일: 할 일이 아니다 (통화한 시각을 마감으로 쓰지도 않는다)
+        let p = rule_plan("10.6. 오전 9:40 OO군청에 참석 인원 물어봄", &c);
+        assert!(kinds(&p, ItemKind::Task).is_empty(), "{:?}", p.items);
+        let p = rule_plan("10. 6. 오전 9:40 경 OO군청 문화체육관광과에 연락 방법과 참석 인원 물어봄 참석인원은 교장1 교원3 학생 14, 총 22명 예정", &c);
+        assert!(kinds(&p, ItemKind::Task).is_empty(), "{:?}", p.items);
+        // 앞으로 할 일: 마감 표현이 없으면 마감 없이
+        let p = rule_plan("OO군청에 참석 인원 물어볼 것", &c);
+        let t = kinds(&p, ItemKind::Task);
+        assert_eq!(t.len(), 1, "{:?}", p.items);
+        assert_eq!(t[0].date, None);
+        // "~까지"는 마감
+        let p = rule_plan("금요일까지 OO군청에 참석 인원 회신", &c);
+        let t = kinds(&p, ItemKind::Task);
+        assert_eq!((t.len(), t[0].date.as_deref()), (1, Some("2026-10-02")), "{:?}", p.items);
+        // 섞여 있으면 앞으로 할 부분만
+        let p = rule_plan("OO군청에 물어봄. 답 오면 금요일까지 교장 보고", &c);
+        let t = kinds(&p, ItemKind::Task);
+        assert_eq!(t.len(), 1, "{:?}", p.items);
+        assert_eq!((t[0].text.as_str(), t[0].date.as_deref()), ("교장 보고", Some("2026-10-02")));
+    }
+
+    #[test]
+    fn ai_task_for_done_action_is_dropped_and_past_time_is_not_due() {
+        let c = ctx(&[], &[]);
+        let raw = "9월 28일 오전 9:40 OO군청에 연락 방법과 참석 인원 물어봄 참석인원은 총 22명 예정";
+        let out = llm(
+            r#"{"summary":"군청 문의","items":[{"kind":"task","text":"OO군청에 연락 방법과 참석 인원 물어봄 참석인원은 총 22명 예정","students":[],"area":"none","duty":0,"date":"9월 28일"}]}"#,
+        );
+        let p = guard_llm(raw, &out, &c);
+        assert!(kinds(&p, ItemKind::Task).is_empty(), "AI 가 할 일로 내도 이미 한 일이면 빼야 한다: {:?}", p.items);
+        // 할 일이지만 적힌 날짜가 지난 시각(마감 표현 없음)이면 마감으로 쓰지 않는다
+        let raw2 = "9월 28일 오전 9:40 보호자 상담 다시 연락하기";
+        let out2 = llm(r#"{"summary":"보호자 연락","items":[{"kind":"task","text":"보호자 상담 다시 연락하기","students":[],"area":"none","duty":0,"date":"9월 28일"}]}"#);
+        let p2 = guard_llm(raw2, &out2, &c);
+        let t = kinds(&p2, ItemKind::Task);
+        assert_eq!(t.len(), 1, "{:?}", p2.items);
+        assert_eq!((t[0].date.as_deref(), t[0].time.as_deref()), (None, None));
     }
 
     #[test]

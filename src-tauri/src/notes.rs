@@ -52,6 +52,10 @@ pub struct NoteDto {
     pub track: Option<String>,
     /// 정리된 업무기록인가 (직접 옮겼거나, 할 일·일정·업무·학생 관찰·시간표가 나온 기록)
     pub is_work: bool,
+    /// 할 일을 끝내 남긴 완료 기록이면 그 할 일
+    pub from_task_id: Option<i64>,
+    /// 그 할 일이 나온 원래 기록
+    pub ref_note_id: Option<i64>,
 }
 
 /// 업무기록 판정: 직접 옮긴 갈래가 우선, 없으면 이 기록에서 나온 항목이 있는지
@@ -63,7 +67,7 @@ const IS_WORK_SQL: &str = "(CASE WHEN notes.track='work' THEN 1 WHEN notes.track
 fn note_cols() -> String {
     format!(
         "id, raw_text, created_at, updated_at, raw_edited_at, status, status_reason, summary, summary_source,
-    classified_at, classified_by, guard_notes, unknown_names, track, {IS_WORK_SQL}"
+    classified_at, classified_by, guard_notes, unknown_names, track, {IS_WORK_SQL}, from_task_id, ref_note_id"
     )
 }
 
@@ -89,6 +93,8 @@ fn map_note(r: &rusqlite::Row) -> rusqlite::Result<NoteDto> {
         questions: vec![],
         track: r.get(13)?,
         is_work: r.get::<_, i64>(14)? != 0,
+        from_task_id: r.get(15)?,
+        ref_note_id: r.get(16)?,
     })
 }
 

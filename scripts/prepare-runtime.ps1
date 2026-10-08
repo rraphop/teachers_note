@@ -1,5 +1,6 @@
 ﻿# llama.cpp 런타임을 src-tauri/runtime/llama.cpp 로 모은다.
-# 직접 빌드한 llama.cpp(llvm-mingw, MSVC 런타임 의존 없음)의 llama-server 와 필요한 DLL만 넣는다.
+# 직접 빌드한 llama.cpp(llvm-mingw, MSVC 런타임 의존 없음, scripts/build-llama.ps1)의 llama-server 와 필요한 DLL만 넣는다.
+# GPU(Vulkan) 계산 모듈 ggml-vulkan.dll 도 넣는다 — 그래픽 드라이버의 vulkan-1.dll 이 있는 PC 에서만 읽히고, 없으면 엔진은 CPU 로 돈다.
 param(
   [string]$ToolsRoot = (Join-Path (Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)) '..\teachers_note-tools'),
   [string]$BuildDir = ''
@@ -7,7 +8,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $Root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $ToolsRoot = (Resolve-Path $ToolsRoot).Path
-if (-not $BuildDir) { $BuildDir = Join-Path $ToolsRoot 'build-llama\bin' }
+if (-not $BuildDir) { $BuildDir = Join-Path $ToolsRoot 'build-llama-vk\bin' }
 $Dest = Join-Path $Root 'src-tauri\runtime\llama.cpp'
 $Mingw = Join-Path $ToolsRoot 'llvm-mingw\x86_64-w64-mingw32\bin'
 
@@ -22,6 +23,10 @@ foreach ($f in $need) {
 }
 # CPU 종류별 계산 모듈 (실행 시 이 PC CPU에 맞는 것을 고른다)
 Get-ChildItem $BuildDir -Filter 'ggml-cpu-*.dll' | Copy-Item -Destination $Dest
+# GPU 계산 모듈 (그래픽카드가 있으면 엔진이 골라 쓴다)
+$vk = Join-Path $BuildDir 'ggml-vulkan.dll'
+if (-not (Test-Path $vk)) { throw "GPU 모듈 ggml-vulkan.dll 이 없습니다: $vk (scripts\build-llama.ps1 로 빌드)" }
+Copy-Item $vk $Dest
 
 # llvm-mingw C++ 런타임 (Apache-2.0 with LLVM exception)
 foreach ($f in @('libc++.dll', 'libunwind.dll')) {
@@ -42,7 +47,7 @@ $missing = @()
 foreach ($bin in Get-ChildItem $Dest -Include *.exe, *.dll -Recurse) {
   $imports = & llvm-readobj --coff-imports $bin.FullName 2>$null | Select-String 'Name: ' | ForEach-Object { ($_.Line.Trim() -replace 'Name: ', '').ToLower() }
   foreach ($i in $imports) {
-    if ($i -match '^(api-ms-|kernel32|advapi32|ws2_32|user32|shell32|ole32|oleaut32|bcrypt|crypt32|ntdll|psapi|iphlpapi|dbghelp|winmm|shlwapi|rpcrt4|version|secur32|ucrtbase|msvcrt|gdi32|comdlg32|setupapi|cfgmgr32|dxgi|d3d|powrprof|userenv|synchronization|bcryptprimitives)') { continue }
+    if ($i -match '^(api-ms-|kernel32|advapi32|ws2_32|user32|shell32|ole32|oleaut32|bcrypt|crypt32|ntdll|psapi|iphlpapi|dbghelp|winmm|shlwapi|rpcrt4|version|secur32|ucrtbase|msvcrt|gdi32|comdlg32|setupapi|cfgmgr32|dxgi|d3d|powrprof|userenv|synchronization|bcryptprimitives|vulkan-1)') { continue }
     if ($present -notcontains $i) { $missing += "$($bin.Name) -> $i" }
   }
 }

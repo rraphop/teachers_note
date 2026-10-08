@@ -13,6 +13,7 @@ import { fmtDate, fmtDateTime } from "../lib/format";
 import { AREA_ORDER, AREA_SHORT, areaLabel } from "../lib/labels";
 import { useLoad, useStore } from "../lib/store";
 import type { Area, Observation, Student, StudentInput } from "../types";
+import { TextLines } from "../components/TextLines";
 
 function StudentForm({ initial, onClose, onSaved }: { initial: Student | null; onClose: () => void; onSaved: () => void }) {
   const { toast } = useStore();
@@ -135,7 +136,7 @@ function ObservationRow({ o, students }: { o: Observation; students: Student[] }
               <span className={`chip area-${o.area}`}>{areaLabel(o.area)}</span>
               <span className={`tag src-${o.source}`}>{o.source === "manual" ? "직접" : o.edited ? "AI·수정됨" : "AI"}</span>
             </div>
-            <p className="obs-content">{o.content}</p>
+            <p className="obs-content"><TextLines text={o.content} /></p>
             {o.note_raw && (
               <button className="link" onClick={() => setOpen((x) => !x)}>
                 {open ? "원문 접기" : "원문 보기"}
@@ -149,7 +150,7 @@ function ObservationRow({ o, students }: { o: Observation; students: Student[] }
                     기록으로 가기
                   </button>
                 </div>
-                <p className="raw-text">{o.note_raw}</p>
+                <p className="raw-text"><TextLines text={o.note_raw} /></p>
               </div>
             )}
           </>

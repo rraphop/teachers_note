@@ -1,8 +1,8 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "메인 창에서 사용하는 최소 권한",
-  "windows": ["main"],
+  "description": "메인 창과 빠른 기록 창에서 사용하는 최소 권한",
+  "windows": ["main", "quick"],
   "permissions": [
     "core:default",
     "dialog:allow-ask",

@@ -6,6 +6,7 @@ import { useStore } from "../lib/store";
 import type { AgendaItem } from "../types";
 import { openEditor } from "./Editors";
 import { IconBell, IconBellOff, IconEdit } from "./Icons";
+import { TextLines } from "./TextLines";
 
 /** 할 일·업무·일정 한 줄: 완료 체크, 날짜, 알림, 수정 */
 export function AgendaRow({ item, showDate = true, isNew = false }: { item: AgendaItem; showDate?: boolean; isNew?: boolean }) {
@@ -39,7 +40,7 @@ export function AgendaRow({ item, showDate = true, isNew = false }: { item: Agen
       <button className="agenda-main" onClick={edit} title="눌러서 수정">
         <span className="agenda-title">
           {isNew && <span className="new-tag">새</span>}
-          {item.title}
+          <TextLines text={item.title} />
         </span>
         {item.memo && <span className="agenda-memo">{item.memo}</span>}
         <span className="agenda-meta">
@@ -51,6 +52,7 @@ export function AgendaRow({ item, showDate = true, isNew = false }: { item: Agen
             </span>
           )}
           {item.duty_label && <span className="tag duty">{item.duty_label}</span>}
+          {item.done && item.done_at && <span className="tag done-record">{fmtDateTime(item.done_at)} 완료</span>}
           {item.kind !== "event" && <span className={`tag src-${item.source}`}>{sourceLabel(item.source)}</span>}
           {/* "10. 2." 처럼 숫자로만 적은 날짜는 이미 "10월 2일"로 보이므로 원래 표현을 다시 보이지 않는다 */}
           {item.date_expr && !/^[\d\s./\-()년월일화수목금토]+$/.test(item.date_expr) && <span className="muted">“{item.date_expr}”</span>}

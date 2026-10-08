@@ -17,10 +17,11 @@ $Target = 'x86_64-pc-windows-gnullvm'
 $Release = Join-Path $Root "src-tauri\target\$Target\release"
 # 프로그램 버전 (tauri.conf.json) — 내려받는 파일 이름에 쓴다
 $appVersion = (Get-Content (Join-Path $Root 'src-tauri\tauri.conf.json') -Raw -Encoding UTF8 | ConvertFrom-Json).version
-# 내려받는 파일만 한글 이름(교무수첩_버전.exe / .zip), 나머지는 teachers_note
+# 빌드 결과 파일 이름 (3차 7번): 영문 Teachers_Note_버전 — 깃허브 릴리즈가 한글 파일 이름을 바꿔 저장하기 때문.
+# 사용자가 받아 쓰는 이름(교무수첩_버전.exe)은 릴리즈 표시 이름·홈페이지 내려받기·바탕화면 복사에서 붙인다.
 $PkgName = 'teachers_note'
 $Pkg = Join-Path $OutRoot $PkgName
-$ZipName = "교무수첩_$appVersion.zip"
+$ZipName = "Teachers_Note_${appVersion}_portable.zip"
 $Zip = Join-Path $OutRoot $ZipName
 
 function Step($m) { Write-Host "`n=== $m ===" -ForegroundColor Cyan }
@@ -182,7 +183,7 @@ try {
   Remove-Item -Recurse -Force $moved -ErrorAction SilentlyContinue
 }
 
-Step '9. 파일 하나 버전 교무수첩_버전.exe (바탕화면에 두고 실행)'
+Step '9. 파일 하나 버전 Teachers_Note_버전.exe (받는 이름 교무수첩_버전.exe)'
 # 조립한 폴더 전체를 묶음(payload.zip)으로 만들고, 파일 목록과 SHA-256 을 실행기 안에 함께 넣는다
 # (버전은 맨 위에서 tauri.conf.json 으로 읽었다)
 $work = Join-Path $OutRoot '.single-work'
@@ -210,8 +211,8 @@ try {
   Pop-Location
   Remove-Item Env:\TN_PAYLOAD, Env:\TN_MANIFEST -ErrorAction SilentlyContinue
 }
-# 파일 이름: 교무수첩_버전.exe — 프로그램 버전 그대로 (예: 교무수첩_1.0.0.exe)
-$singleName = "교무수첩_$appVersion.exe"
+# 파일 이름: Teachers_Note_버전.exe — 프로그램 버전 그대로 (예: Teachers_Note_1.0.0.exe)
+$singleName = "Teachers_Note_$appVersion.exe"
 $single = Join-Path $OutRoot $singleName
 Copy-Item (Join-Path $Root "launcher\target\$Target\release\teachers_note_launcher.exe") $single -Force
 Remove-Item -Recurse -Force $work

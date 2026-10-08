@@ -1,0 +1,762 @@
+{
+  "implementation": "new",
+  "mode": "rules",
+  "install": null,
+  "engine_start_ms": null,
+  "memory": null,
+  "set": "eval-set",
+  "started": "2026-10-08T12:34:54.703Z",
+  "rows": [
+    {
+      "id": "A",
+      "raw": "오늘 3교시 2-1 홍길동 지각. 담임에게 알리고 금요일까지 보호자 연락.",
+      "status": "rules",
+      "infer_ms": null,
+      "wall_ms": 24,
+      "summary": "3교시 2-1 홍길동 지각",
+      "guard_notes": [],
+      "checks": [
+        {
+          "name": "학생 홍길동·attendance",
+          "ok": true,
+          "detail": "홍길동:attendance"
+        },
+        {
+          "name": "할 일 '보호자'@2026-10-09",
+          "ok": true,
+          "detail": "담임에게 알리기@-, 보호자 연락@2026-10-09"
+        },
+        {
+          "name": "일정 없음",
+          "ok": true,
+          "detail": ""
+        }
+      ],
+      "items": [
+        {
+          "kind": "student",
+          "text": "오늘 3교시 2-1 홍길동 지각",
+          "area": "attendance",
+          "students": [
+            "홍길동"
+          ],
+          "date": "2026-10-08",
+          "time": null,
+          "origin": "rule"
+        },
+        {
+          "kind": "task",
+          "text": "담임에게 알리기",
+          "area": "none",
+          "students": [],
+          "date": null,
+          "time": null,
+          "origin": "rule"
+        },
+        {
+          "kind": "task",
+          "text": "보호자 연락",
+          "area": "none",
+          "students": [],
+          "date": "2026-10-09",
+          "time": null,
+          "origin": "rule"
+        }
+      ]
+    },
+    {
+      "id": "B",
+      "raw": "학생들이 수업 중 손장난을 했고 지적을 받았습니다.",
+      "status": "rules",
+      "infer_ms": null,
+      "wall_ms": 6,
+      "summary": "학생들이 수업 중 손장난을 했고 지적을 받았습니다",
+      "guard_notes": [],
+      "checks": [
+        {
+          "name": "출결 아님",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "할 일 없음",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "일정 없음",
+          "ok": true,
+          "detail": ""
+        }
+      ],
+      "items": [
+        {
+          "kind": "student",
+          "text": "학생들이 수업 중 손장난을 했고 지적을 받았습니다",
+          "area": "subject",
+          "students": [],
+          "date": "2026-10-08",
+          "time": null,
+          "origin": "rule"
+        }
+      ]
+    },
+    {
+      "id": "C",
+      "raw": "10월 15일 교육장 공감소통 방문",
+      "status": "rules",
+      "infer_ms": null,
+      "wall_ms": 6,
+      "summary": "교육장 공감소통 방문",
+      "guard_notes": [],
+      "checks": [
+        {
+          "name": "출결 아님",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "할 일 없음",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "일정 '교육장 공감소통 방문'@2026-10-15",
+          "ok": true,
+          "detail": "교육장 공감소통 방문@2026-10-15 "
+        }
+      ],
+      "items": [
+        {
+          "kind": "event",
+          "text": "교육장 공감소통 방문",
+          "area": "none",
+          "students": [],
+          "date": "2026-10-15",
+          "time": null,
+          "origin": "rule"
+        }
+      ]
+    },
+    {
+      "id": "D1",
+      "raw": "2학기 학사일정 변경안이 교무회의에서 확정됨.",
+      "status": "rules",
+      "infer_ms": null,
+      "wall_ms": 4,
+      "summary": "2학기 학사일정 변경안이 교무회의에서 확정됨",
+      "guard_notes": [],
+      "checks": [
+        {
+          "name": "할 일 없음",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "업무 기록",
+          "ok": true,
+          "detail": ""
+        }
+      ],
+      "items": [
+        {
+          "kind": "duty",
+          "text": "2학기 학사일정 변경안이 교무회의에서 확정됨",
+          "area": "none",
+          "students": [],
+          "date": null,
+          "time": null,
+          "origin": "rule"
+        }
+      ]
+    },
+    {
+      "id": "D2",
+      "raw": "학사력 수정본 금요일까지 교육청에 제출.",
+      "status": "rules",
+      "infer_ms": null,
+      "wall_ms": 5,
+      "summary": "학사력 수정본 금요일까지 교육청에 제출",
+      "guard_notes": [],
+      "checks": [
+        {
+          "name": "할 일 '제출'@2026-10-09",
+          "ok": true,
+          "detail": "학사력 수정본 교육청에 제출@2026-10-09"
+        },
+        {
+          "name": "할 일 1개",
+          "ok": true,
+          "detail": "1"
+        },
+        {
+          "name": "업무 기록",
+          "ok": true,
+          "detail": ""
+        }
+      ],
+      "items": [
+        {
+          "kind": "task",
+          "text": "학사력 수정본 교육청에 제출",
+          "area": "none",
+          "students": [],
+          "date": "2026-10-09",
+          "time": null,
+          "origin": "rule"
+        },
+        {
+          "kind": "duty",
+          "text": "학사력 수정본 금요일까지 교육청에 제출",
+          "area": "none",
+          "students": [],
+          "date": "2026-10-09",
+          "time": null,
+          "origin": "rule"
+        }
+      ]
+    },
+    {
+      "id": "E1",
+      "raw": "2-3 성춘향 진로 상담. 간호사가 되고 싶다고 함.",
+      "status": "rules",
+      "infer_ms": null,
+      "wall_ms": 5,
+      "summary": "2-3 성춘향 진로 상담",
+      "guard_notes": [],
+      "checks": [
+        {
+          "name": "학생 성춘향·career",
+          "ok": true,
+          "detail": "성춘향:career"
+        },
+        {
+          "name": "출결 아님",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "할 일 없음",
+          "ok": true,
+          "detail": ""
+        }
+      ],
+      "items": [
+        {
+          "kind": "student",
+          "text": "2-3 성춘향 진로 상담",
+          "area": "career",
+          "students": [
+            "성춘향"
+          ],
+          "date": "2026-10-08",
+          "time": null,
+          "origin": "rule"
+        }
+      ]
+    },
+    {
+      "id": "E2",
+      "raw": "1-1 전우치 동아리 시간에 로봇 코딩 발표를 맡아 잘 해냄.",
+      "status": "rules",
+      "infer_ms": null,
+      "wall_ms": 4,
+      "summary": "1-1 전우치 동아리 시간에 로봇 코딩 발표를 맡아 잘 해냄",
+      "guard_notes": [],
+      "checks": [
+        {
+          "name": "학생 전우치·club",
+          "ok": true,
+          "detail": "전우치:club"
+        },
+        {
+          "name": "출결 아님",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "할 일 없음",
+          "ok": true,
+          "detail": ""
+        }
+      ],
+      "items": [
+        {
+          "kind": "student",
+          "text": "1-1 전우치 동아리 시간에 로봇 코딩 발표를 맡아 잘 해냄",
+          "area": "club",
+          "students": [
+            "전우치"
+          ],
+          "date": "2026-10-08",
+          "time": null,
+          "origin": "rule"
+        }
+      ]
+    },
+    {
+      "id": "E3",
+      "raw": "3-2 이몽룡 5교시 조퇴(병원 진료). 내일 진료확인서 받기.",
+      "status": "rules",
+      "infer_ms": null,
+      "wall_ms": 7,
+      "summary": "3-2 이몽룡 5교시 조퇴(병원 진료)",
+      "guard_notes": [],
+      "checks": [
+        {
+          "name": "학생 이몽룡·attendance",
+          "ok": true,
+          "detail": "이몽룡:attendance"
+        },
+        {
+          "name": "할 일 '진료확인서'@2026-10-09",
+          "ok": true,
+          "detail": "진료확인서 받기@2026-10-09"
+        }
+      ],
+      "items": [
+        {
+          "kind": "student",
+          "text": "3-2 이몽룡 5교시 조퇴(병원 진료)",
+          "area": "attendance",
+          "students": [
+            "이몽룡"
+          ],
+          "date": "2026-10-08",
+          "time": null,
+          "origin": "rule"
+        },
+        {
+          "kind": "task",
+          "text": "진료확인서 받기",
+          "area": "none",
+          "students": [],
+          "date": "2026-10-09",
+          "time": null,
+          "origin": "rule"
+        }
+      ]
+    },
+    {
+      "id": "E4",
+      "raw": "다음 주 수요일 오후 3시 교과협의회",
+      "status": "rules",
+      "infer_ms": null,
+      "wall_ms": 5,
+      "summary": "교과협의회",
+      "guard_notes": [],
+      "checks": [
+        {
+          "name": "할 일 없음",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "일정 '교과협의회'@2026-10-14 15:00",
+          "ok": true,
+          "detail": "교과협의회@2026-10-14 15:00"
+        }
+      ],
+      "items": [
+        {
+          "kind": "event",
+          "text": "교과협의회",
+          "area": "none",
+          "students": [],
+          "date": "2026-10-14",
+          "time": "15:00",
+          "origin": "rule"
+        }
+      ]
+    },
+    {
+      "id": "E5",
+      "raw": "2-1 홍길동 친구와 다툼이 있어 상담함. 서로 사과함.",
+      "status": "rules",
+      "infer_ms": null,
+      "wall_ms": 4,
+      "summary": "2-1 홍길동 친구와 다툼이 있어 상담함",
+      "guard_notes": [],
+      "checks": [
+        {
+          "name": "학생 홍길동·behavior",
+          "ok": true,
+          "detail": "홍길동:behavior"
+        },
+        {
+          "name": "출결 아님",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "할 일 없음",
+          "ok": true,
+          "detail": ""
+        }
+      ],
+      "items": [
+        {
+          "kind": "student",
+          "text": "2-1 홍길동 친구와 다툼이 있어 상담함",
+          "area": "behavior",
+          "students": [
+            "홍길동"
+          ],
+          "date": "2026-10-08",
+          "time": null,
+          "origin": "rule"
+        }
+      ]
+    },
+    {
+      "id": "E6",
+      "raw": "봉사활동 확인서 수합 이번 주 금요일까지",
+      "status": "rules",
+      "infer_ms": null,
+      "wall_ms": 5,
+      "summary": "봉사활동 확인서 수합 이번 주 금요일까지",
+      "guard_notes": [],
+      "checks": [
+        {
+          "name": "출결 아님",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "할 일 '확인서'@2026-10-09",
+          "ok": true,
+          "detail": "봉사활동 확인서 수합@2026-10-09"
+        },
+        {
+          "name": "일정 없음",
+          "ok": true,
+          "detail": ""
+        }
+      ],
+      "items": [
+        {
+          "kind": "task",
+          "text": "봉사활동 확인서 수합",
+          "area": "none",
+          "students": [],
+          "date": "2026-10-09",
+          "time": null,
+          "origin": "rule"
+        }
+      ]
+    },
+    {
+      "id": "E7",
+      "raw": "10월 20일 체육대회. 반별 응원 준비 필요.",
+      "status": "rules",
+      "infer_ms": null,
+      "wall_ms": 5,
+      "summary": "체육대회",
+      "guard_notes": [],
+      "checks": [
+        {
+          "name": "할 일 '응원'",
+          "ok": true,
+          "detail": "반별 응원 준비 필요@-"
+        },
+        {
+          "name": "일정 '체육대회'@2026-10-20",
+          "ok": true,
+          "detail": "체육대회@2026-10-20 "
+        }
+      ],
+      "items": [
+        {
+          "kind": "task",
+          "text": "반별 응원 준비 필요",
+          "area": "none",
+          "students": [],
+          "date": null,
+          "time": null,
+          "origin": "rule"
+        },
+        {
+          "kind": "event",
+          "text": "체육대회",
+          "area": "none",
+          "students": [],
+          "date": "2026-10-20",
+          "time": null,
+          "origin": "rule"
+        }
+      ]
+    },
+    {
+      "id": "E8",
+      "raw": "2-2 심학규 수학 수행평가 미제출.",
+      "status": "rules",
+      "infer_ms": null,
+      "wall_ms": 7,
+      "summary": "2-2 심학규 수학 수행평가 미제출",
+      "guard_notes": [],
+      "checks": [
+        {
+          "name": "학생 심학규·subject",
+          "ok": true,
+          "detail": "심학규:subject"
+        },
+        {
+          "name": "출결 아님",
+          "ok": true,
+          "detail": ""
+        }
+      ],
+      "items": [
+        {
+          "kind": "student",
+          "text": "2-2 심학규 수학 수행평가 미제출",
+          "area": "subject",
+          "students": [
+            "심학규"
+          ],
+          "date": "2026-10-08",
+          "time": null,
+          "origin": "rule"
+        }
+      ]
+    },
+    {
+      "id": "E9",
+      "raw": "오늘 급식 메뉴가 좋았음.",
+      "status": "rules",
+      "infer_ms": null,
+      "wall_ms": 4,
+      "summary": "급식 메뉴가 좋았음",
+      "guard_notes": [],
+      "checks": [
+        {
+          "name": "출결 아님",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "학생 관찰 없음",
+          "ok": true,
+          "detail": "0"
+        },
+        {
+          "name": "할 일 없음",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "일정 없음",
+          "ok": true,
+          "detail": ""
+        }
+      ],
+      "items": []
+    },
+    {
+      "id": "E10",
+      "raw": "1-3 박흥부 이번 달 지각 3회 누적. 벌점 부여함.",
+      "status": "rules",
+      "infer_ms": null,
+      "wall_ms": 4,
+      "summary": "1-3 박흥부 이번 달 지각 3회 누적",
+      "guard_notes": [],
+      "checks": [
+        {
+          "name": "학생 박흥부·attendance",
+          "ok": true,
+          "detail": "박흥부:attendance"
+        },
+        {
+          "name": "할 일 없음",
+          "ok": true,
+          "detail": ""
+        }
+      ],
+      "items": [
+        {
+          "kind": "student",
+          "text": "1-3 박흥부 이번 달 지각 3회 누적",
+          "area": "attendance",
+          "students": [
+            "박흥부"
+          ],
+          "date": "2026-10-08",
+          "time": null,
+          "origin": "rule"
+        }
+      ]
+    },
+    {
+      "id": "E11",
+      "raw": "지각하지 않도록 학급 전체에 안내함.",
+      "status": "rules",
+      "infer_ms": null,
+      "wall_ms": 4,
+      "summary": "지각하지 않도록 학급 전체에 안내함",
+      "guard_notes": [],
+      "checks": [
+        {
+          "name": "출결 아님",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "할 일 없음",
+          "ok": true,
+          "detail": ""
+        }
+      ],
+      "items": []
+    },
+    {
+      "id": "E12",
+      "raw": "교육청 공문 회신 10/8까지.",
+      "status": "rules",
+      "infer_ms": null,
+      "wall_ms": 4,
+      "summary": "교육청 공문 회신 10/8까지",
+      "guard_notes": [],
+      "checks": [
+        {
+          "name": "할 일 '회신'@2026-10-08",
+          "ok": true,
+          "detail": "교육청 공문 회신@2026-10-08"
+        },
+        {
+          "name": "일정 없음",
+          "ok": true,
+          "detail": ""
+        }
+      ],
+      "items": [
+        {
+          "kind": "task",
+          "text": "교육청 공문 회신",
+          "area": "none",
+          "students": [],
+          "date": "2026-10-08",
+          "time": null,
+          "origin": "rule"
+        }
+      ]
+    },
+    {
+      "id": "E13",
+      "raw": "2학년 1반 3번 홍길동 학급회의에서 의견을 적극 제시함.",
+      "status": "rules",
+      "infer_ms": null,
+      "wall_ms": 4,
+      "summary": "2학년 1반 3번 홍길동 학급회의에서 의견을 적극 제시함",
+      "guard_notes": [],
+      "checks": [
+        {
+          "name": "학생 홍길동·autonomous",
+          "ok": true,
+          "detail": "홍길동:autonomous"
+        },
+        {
+          "name": "출결 아님",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "할 일 없음",
+          "ok": true,
+          "detail": ""
+        }
+      ],
+      "items": [
+        {
+          "kind": "student",
+          "text": "2학년 1반 3번 홍길동 학급회의에서 의견을 적극 제시함",
+          "area": "autonomous",
+          "students": [
+            "홍길동"
+          ],
+          "date": "2026-10-08",
+          "time": null,
+          "origin": "rule"
+        }
+      ]
+    },
+    {
+      "id": "E14",
+      "raw": "모레 오전 9시 학년 협의회",
+      "status": "rules",
+      "infer_ms": null,
+      "wall_ms": 5,
+      "summary": "학년 협의회",
+      "guard_notes": [],
+      "checks": [
+        {
+          "name": "할 일 없음",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "일정 '협의회'@2026-10-10 09:00",
+          "ok": true,
+          "detail": "학년 협의회@2026-10-10 09:00"
+        }
+      ],
+      "items": [
+        {
+          "kind": "event",
+          "text": "학년 협의회",
+          "area": "none",
+          "students": [],
+          "date": "2026-10-10",
+          "time": "09:00",
+          "origin": "rule"
+        }
+      ]
+    },
+    {
+      "id": "E15",
+      "raw": "학생부 기재 요령 연수 자료 확인하기.",
+      "status": "rules",
+      "infer_ms": null,
+      "wall_ms": 7,
+      "summary": "학생부 기재 요령 연수 자료 확인하기",
+      "guard_notes": [],
+      "checks": [
+        {
+          "name": "출결 아님",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "할 일 '연수 자료'",
+          "ok": true,
+          "detail": "학생부 기재 요령 연수 자료 확인하기@-"
+        },
+        {
+          "name": "일정 없음",
+          "ok": true,
+          "detail": ""
+        }
+      ],
+      "items": [
+        {
+          "kind": "task",
+          "text": "학생부 기재 요령 연수 자료 확인하기",
+          "area": "none",
+          "students": [],
+          "date": null,
+          "time": null,
+          "origin": "rule"
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "passed": 52,
+    "total": 52,
+    "rate": 100,
+    "perfect_notes": 20,
+    "notes": 20,
+    "avg_infer_ms": null,
+    "max_infer_ms": null,
+    "false_attendance_notes": 0
+  }
+}

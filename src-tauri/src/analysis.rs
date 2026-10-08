@@ -258,11 +258,13 @@ static RE_GROUP: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"학생들|아이들|반\s*전체|우리\s*반|몇몇|일부\s*학생|모둠|학급\s*전체|남학생들|여학생들").unwrap());
 
 static RE_ACTION: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"제출|연락|확인|보내|발송|전달|작성|준비|처리|신청|회신|알리|알려|안내|공지|점검|검토|결재|입력|등록|수합|취합|출력|인쇄|예약|챙기|챙겨|협의|요청|문의|구입|주문|배부|게시|업로드|올리|올려|채점|상담|면담|통화|전화|보고하|반납|수정|정리|받기|받아|받을|받으|수령|회수|걷기|걷어|수거|모으|모아|나눠|나누어|배포|복사|만들|만드|바꾸|바꿔|고치|고쳐|옮기|붙이|치우|닫기|끄기").unwrap()
+    Regex::new(r"제출|연락|확인|보내|발송|전달|작성|준비|처리|신청|회신|알리|알려|안내|공지|점검|검토|결재|입력|등록|수합|취합|출력|인쇄|예약|챙기|챙겨|협의|요청|문의|구입|주문|배부|게시|업로드|올리|올려|채점|상담|면담|통화|전화|보고하|반납|수정|정리|받기|받아|받을|받으|수령|회수|걷기|걷어|수거|모으|모아|나눠|나누어|배포|복사|만들|만드|바꾸|바꿔|고치|고쳐|옮기|붙이|치우|닫기|끄기|물어|묻|여쭤|여쭈|알아보|알아봐").unwrap()
 });
 static RE_OBLIGATION: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r"해야|하기\b|하기$|할\s*것|할것|하자|할\s*예정|예정|필요|하도록|부탁|요망|바람|하기로|할게|해\s*줘|해\s*주세요|드리기|받기|보내기|잊지\s*말").unwrap()
 });
+/// "보낼 예정", "할 예정"처럼 행동 뒤에 붙은 예정 (받침 ㄹ 글자 + 예정)
+static RE_WILL_PLAN: Lazy<Regex> = Lazy::new(|| Regex::new(r"[할볼갈올줄낼쓸릴길칠될일둘울을]\s*예정").unwrap());
 static RE_PAST: Lazy<Regex> = Lazy::new(|| {
     // '완료', '마감'은 "금요일까지 완료"처럼 앞으로 할 일에도 쓰이므로 과거 표지로 보지 않는다.
     // 개조식 끝맺음 "~옴(왔음)·~봄·~줌·~냄·~씀"도 이미 있었던 일이다 ("보호자 전화 옴"). "수업중 잠 → 지도함"의 '잠'도 그렇다.
@@ -696,12 +698,40 @@ fn ends_with_todo_ki(s: &str) -> bool {
     last.ends_with('기') && last.chars().count() >= 2 && !NOUNS.iter().any(|n| last.ends_with(n))
 }
 
+/// 받침이 ㄹ 인 글자
+fn has_rieul_final(c: char) -> bool {
+    let code = c as u32;
+    (0xAC00..=0xD7A3).contains(&code) && (code - 0xAC00) % 28 == 8
+}
+
+/// "물어볼 것", "보낼 것"처럼 "~ㄹ 것"으로 끝나는 할 일 메모
+fn ends_with_todo_geot(s: &str) -> bool {
+    let t = s.trim().trim_end_matches(['.', '!', '。', ')']).trim();
+    let Some(head) = t.strip_suffix('것') else { return false };
+    head.trim_end().chars().last().is_some_and(has_rieul_final)
+}
+
 pub fn has_obligation(s: &str) -> bool {
-    RE_OBLIGATION.is_match(s) || ends_with_todo_ki(s)
+    RE_OBLIGATION.is_match(s) || ends_with_todo_ki(s) || ends_with_todo_geot(s)
+}
+
+/// 개조식 끝맺음(~봄·~옴·~줌·~냄·~씀)이 낱말 끝에 붙어 있으면 뒤에 다른 말이 이어져도 이미 한 일이다
+/// ("참석 인원 물어봄 참석인원은 …"). "돌봄 교실", "새봄" 같은 명사는 제외.
+fn has_done_word(s: &str) -> bool {
+    const NOUNS: [&str; 6] = ["돌봄", "새봄", "늦봄", "초봄", "올봄", "이른봄"];
+    s.split(|c: char| c.is_whitespace() || ",.!?()→·".contains(c)).any(|w| {
+        w.chars().count() >= 2 && ['봄', '옴', '줌', '냄', '씀'].iter().any(|e| w.ends_with(*e)) && !NOUNS.iter().any(|n| w.ends_with(n))
+    })
 }
 
 pub fn is_past(s: &str) -> bool {
-    RE_PAST.is_match(s)
+    RE_PAST.is_match(s) || has_done_word(s) || is_done_record(s)
+}
+
+/// 할 일을 끝내 남긴 완료 기록 ("10월 8일 13:30 완료 · 군청에 참석 인원 회신")은 이미 한 일이다
+fn is_done_record(s: &str) -> bool {
+    static RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\d{1,2}:\d{2}\s*완료\s*·").unwrap());
+    RE.is_match(s)
 }
 
 /// 원문에 그 영역을 뒷받침하는 낱말이 있는가
@@ -823,7 +853,12 @@ impl Analysis {
         }
         // 행동어 없이 의무 표현만 있어도 앞으로의 날짜가 있으면 할 일 ("다음 주 월요일 결석계 받기")
         if c.obligation && self.clause_date(idx).is_some_and(|d| d.date >= self.today) {
-            return true;
+            // "총 22명 예정"처럼 '예정'만 있는 절은 해야 할 행동이 아니라 사실이다 ("보낼 예정", "할 예정"은 할 일)
+            let text = self.clause_text(idx);
+            let plan_only = !has_obligation(&text.replace("예정", "")) && !RE_WILL_PLAN.is_match(text);
+            if !plan_only {
+                return true;
+            }
         }
         if c.action {
             // 기한 있는 할 일과 "~하고"로 이어진 행동 ("담임에게 알리고 금요일까지 보호자 연락")
@@ -1055,6 +1090,20 @@ mod tests {
         assert!(!is_past("줌 회의 링크 보내기"));
         let a = analyze("청소 당번표 다시 만들기.", today(), &[], &[]);
         assert!(a.clause_is_task(0));
+    }
+
+    #[test]
+    fn done_words_and_todo_geot() {
+        assert!(is_past("OO군청에 참석 인원 물어봄 참석인원은 교장1 교원3"));
+        assert!(is_past("학부모에게 안내함"));
+        assert!(!is_past("돌봄 교실 운영 계획 확인하기"));
+        assert!(!is_past("봄 소풍 장소 정하기"));
+        assert!(has_obligation("군청에 참석 인원 물어볼 것"));
+        assert!(has_obligation("자료 보낼 것."));
+        assert!(!has_obligation("좋은 것"));
+        assert!(has_action("군청에 참석 인원 물어볼 것"));
+        assert!(is_past("10월 8일 13:30 완료 · OO교육청 공문 회신"), "할 일 완료 기록");
+        assert!(!is_past("금요일까지 보고서 작성 완료"));
     }
 
     #[test]

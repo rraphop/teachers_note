@@ -73,7 +73,7 @@ pub fn launch_config(db: &Db, paths: &AppPaths) -> AppResult<Option<LaunchConfig
             size_bytes: m.size_bytes,
             ctx: 4096,
             threads,
-            gpu_layers: 0,
+            device: s.ai_device,
         }))
     })
 }
@@ -104,6 +104,13 @@ pub const NO_MODEL_REASON: &str =
 
 /// 기록 하나를 AI 로 분류한다 (DB 잠금은 짧게만 잡는다)
 pub fn classify_one(state: &AppState, note_id: i64, forced: bool) -> AppResult<()> {
+    // 할 일을 끝내 남긴 완료 기록은 이미 끝난 일이라 AI 가 다시 할 일로 정리하지 않는다 (3차 5·6번)
+    let from_task: Option<i64> = state.db.with(|c| Ok(c.query_row("SELECT from_task_id FROM notes WHERE id=?1", rusqlite::params![note_id], |r| r.get(0))?))?;
+    if from_task.is_some() {
+        state.db.with(|c| notes::set_status(c, note_id, "classified", None, util::now()))?;
+        (state.emit)("note-updated", json!({ "id": note_id }));
+        return Ok(());
+    }
     let (raw, created, roster, duty_list, auto, remind_default) = state.db.with(|c| {
         let (raw, created) = notes::raw_and_created(c, note_id)?;
         let s = settings::load(c)?;

@@ -1020,6 +1020,10 @@ pub struct RuntimeStatus {
     pub listening: Vec<String>,
     pub local_only: Option<bool>,
     pub diagnostics: Vec<String>,
+    /// 지금 엔진이 쓰는 계산 장치 ("CPU" 또는 그래픽카드 이름)
+    pub device: Option<String>,
+    /// 이 PC 에서 찾은 그래픽카드 (엔진에 물어본 뒤에만)
+    pub gpus: Vec<runtime::GpuDevice>,
 }
 
 /// 지금 기록하면 AI가 정리할 수 있는지 (선택·설치된 모델이 있고 자동 분류가 켜져 있는지)
@@ -1042,6 +1046,8 @@ pub async fn runtime_status(state: S<'_>) -> AppResult<RuntimeStatus> {
         listening,
         local_only,
         diagnostics: rt.diagnostics(),
+        device: rt.active_device(),
+        gpus: rt.cached_devices(),
     })
 }
 
@@ -1517,5 +1523,30 @@ pub async fn show_main_window(app: AppHandle) -> AppResult<()> {
         let _ = w.unminimize();
         let _ = w.set_focus();
     }
+    Ok(())
+}
+
+
+/// 빠른 기록 창을 연다 (트레이 '기록하기'와 같음)
+#[tauri::command]
+pub async fn open_quick_window(app: tauri::AppHandle) -> AppResult<()> {
+    crate::open_quick(&app);
+    Ok(())
+}
+
+/// 빠른 기록 창을 닫는다 (저장한 뒤·Esc)
+#[tauri::command]
+pub async fn close_quick_window(app: tauri::AppHandle) -> AppResult<()> {
+    use tauri::Manager;
+    if let Some(w) = app.get_webview_window("quick") {
+        let _ = w.close();
+    }
+    Ok(())
+}
+
+/// 프로그램을 완전히 끈다 (트레이 '종료하기'와 같음, 묻지 않음 — 자동 시험·설정 화면용)
+#[tauri::command]
+pub async fn quit_app(app: tauri::AppHandle) -> AppResult<()> {
+    app.exit(0);
     Ok(())
 }

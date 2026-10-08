@@ -27,6 +27,8 @@ pub struct AppSettings {
     pub window_transparency: u8,
     /// AI 계산에 쓸 CPU 스레드 (None = 자동)
     pub threads: Option<u32>,
+    /// AI 계산 장치: auto(그래픽카드가 있으면 GPU) | cpu
+    pub ai_device: crate::runtime::DeviceMode,
     /// 처음 실행 안내를 마쳤는지
     pub onboarding_done: bool,
     /// 학급명렬표에서 켠 항목 (기본은 모두 꺼짐 — 필요한 것만 켠다)
@@ -117,6 +119,7 @@ impl Default for AppSettings {
             always_on_top: false,
             window_transparency: 0,
             threads: None,
+            ai_device: crate::runtime::DeviceMode::Auto,
             onboarding_done: false,
             roster_columns: RosterColumns::default(),
             birthdays_on_calendar: false,
