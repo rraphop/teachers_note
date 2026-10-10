@@ -75,7 +75,7 @@ export interface Note {
   questions: NoteQuestion[];
   /** 교사가 직접 옮긴 갈래 (없으면 AI 분류를 따름) */
   track: NoteTrack | null;
-  /** 정리된 업무기록인가 */
+  /** 정리된 기록인가 (아니면 기타 기록) */
   is_work: boolean;
   /** 할 일을 끝내 남긴 완료 기록이면 그 할 일 */
   from_task_id: number | null;
@@ -194,6 +194,8 @@ export interface NoteFilter {
   student_id?: number | null;
   limit?: number;
   offset?: number;
+  /** 기록 화면 검색: 모두 들어 있는 낱말·구 */
+  terms?: string[] | null;
 }
 
 export interface ResolvedDate {

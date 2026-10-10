@@ -552,6 +552,11 @@ fn attach_profile(a: &Analysis, plan: &mut Plan) {
             continue;
         }
         let student = studs.remove(0);
+        let mut hits = hits;
+        // 학급 번호("홍길동 번호는 21번")는 그 학생 이름 바로 뒤의 '번호'일 때만
+        if let Some(n) = crate::profile::find_number(text, &student.name) {
+            hits.push(crate::profile::Hit { field: "number", value: n, relation: String::new() });
+        }
         if !hits.is_empty() {
             for h in hits {
                 let it = crate::profile::ProfileItem { field: h.field.to_string(), value: h.value, relation: h.relation, student: student.clone(), text: text::tidy(text) };
@@ -1177,6 +1182,22 @@ mod tests {
             assert!(!p.items.iter().any(|i| i.text.contains("010-")), "학생부 자료로 보내지 않음: {:?}", p.items);
             assert!(p.guard_notes.iter().any(|n| n.contains("여러 학생")), "{:?}", p.guard_notes);
         }
+    }
+
+    #[test]
+    fn class_number_goes_to_roster_not_records() {
+        let r = one_class_school();
+        let c = Ctx { today: today(), roster: &r, duties: &[] };
+        let raw = "1-1 심청 번호는 21번";
+        // AI 가 학생 관찰로 내도 학생부 자료로 보내지 않고 명렬표 번호로
+        let out = llm(r#"{"summary":"번호","items":[{"kind":"student","text":"1-1 심청 번호는 21번","students":["1-1 심청"],"area":"none","duty":0,"date":""}]}"#);
+        for p in [rule_plan(raw, &c), guard_llm(raw, &out, &c)] {
+            assert_eq!(p.profile.iter().map(|i| (i.field.as_str(), i.value.as_str(), i.student.student_id)).collect::<Vec<_>>(), vec![("number", "21", Some(1))]);
+            assert!(kinds(&p, ItemKind::Student).is_empty(), "{:?}", p.items);
+        }
+        // 이름 바로 뒤가 아닌 다른 번호는 넣지 않는다
+        let p = rule_plan("1-1 심청 수행평가 문항 번호 3번 틀림", &c);
+        assert!(p.profile.is_empty(), "{:?}", p.profile);
     }
 
     #[test]

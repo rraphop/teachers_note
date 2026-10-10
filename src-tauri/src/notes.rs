@@ -204,7 +204,7 @@ pub struct NoteFilter {
     /// all | unclassified | classified
     #[serde(default)]
     pub status: Option<String>,
-    /// general (일반 기록) | work (정리된 업무기록) | 없음 (모두)
+    /// general (화면 이름: 기타 기록) | work (정리된 기록) | 없음 (모든 기록)
     #[serde(default)]
     pub track: Option<String>,
     #[serde(default)]
@@ -215,6 +215,9 @@ pub struct NoteFilter {
     pub limit: Option<i64>,
     #[serde(default)]
     pub offset: Option<i64>,
+    /// 기록 화면 검색: 낱말·구마다 원문(또는 요약)에 모두 들어 있는 기록만 (AND)
+    #[serde(default)]
+    pub terms: Option<Vec<String>>,
 }
 
 pub fn list_notes(conn: &Connection, f: &NoteFilter) -> AppResult<Vec<NoteDto>> {
@@ -237,6 +240,11 @@ pub fn list_notes(conn: &Connection, f: &NoteFilter) -> AppResult<Vec<NoteDto>> 
     if let Some(s) = f.student_id {
         args.push(Box::new(s));
         w.push(format!("id IN (SELECT note_id FROM note_students WHERE student_id=?{})", args.len()));
+    }
+    for t in f.terms.iter().flatten().map(|t| t.trim()).filter(|t| !t.is_empty()).take(10) {
+        args.push(Box::new(crate::search::like_pattern(&t.chars().take(100).collect::<String>())));
+        let i = args.len();
+        w.push(format!("(raw_text LIKE ?{i} ESCAPE '\\' OR IFNULL(summary,'') LIKE ?{i} ESCAPE '\\')"));
     }
     let limit = f.limit.unwrap_or(100).clamp(1, 500);
     let offset = f.offset.unwrap_or(0).max(0);
@@ -731,6 +739,31 @@ mod tests {
         assert!(create_note(&c, "   ", now()).is_err());
         let un = list_notes(&c, &NoteFilter { status: Some("unclassified".into()), ..Default::default() }).unwrap();
         assert_eq!(un.len(), 1);
+    }
+
+    #[test]
+    fn search_terms_must_all_appear() {
+        let db = Db::open_in_memory().unwrap();
+        let c = db.lock();
+        create_note(&c, "2-1 홍길동 보호자 연락함", now()).unwrap();
+        create_note(&c, "홍길동 수업 중 발표. 보호자 상담은 다음 주", now()).unwrap();
+        create_note(&c, "학년 협의회 자료 준비 100%", now()).unwrap();
+        let find = |terms: &[&str]| -> Vec<String> {
+            let f = NoteFilter { terms: Some(terms.iter().map(|t| t.to_string()).collect()), ..Default::default() };
+            let mut v: Vec<String> = list_notes(&c, &f).unwrap().into_iter().map(|n| n.raw_text).collect();
+            v.sort();
+            v
+        };
+        assert_eq!(find(&["홍길동"]).len(), 2);
+        // 낱말 두 개: 둘 다 들어 있으면 (붙어 있지 않아도)
+        assert_eq!(find(&["홍길동", "상담"]), vec!["홍길동 수업 중 발표. 보호자 상담은 다음 주".to_string()]);
+        // 구 하나: 그 구 그대로 있는 기록만
+        assert_eq!(find(&["보호자 연락"]), vec!["2-1 홍길동 보호자 연락함".to_string()]);
+        assert!(find(&["홍길동", "협의회"]).is_empty());
+        // %·_ 는 글자 그대로
+        assert_eq!(find(&["100%"]).len(), 1);
+        assert!(find(&["_"]).is_empty());
+        assert_eq!(find(&["  "]).len(), 3, "빈 낱말은 무시");
     }
 
     #[test]

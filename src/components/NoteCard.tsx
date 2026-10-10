@@ -9,7 +9,7 @@ import { ClassifyEditor } from "./ClassifyEditor";
 import { ProfileChips, ProfileQuestions } from "./ProfileParts";
 import { IconEdit, IconSpark, IconTrash } from "./Icons";
 import { confirmDialog } from "./Modal";
-import { TextLines } from "./TextLines";
+import { Marked, TextLines } from "./TextLines";
 
 export function StatusBadge({ status, by }: { status: Note["status"]; by?: string | null }) {
   // 기록 전체가 시간표 문장이라 규칙으로 바로 정리한 경우
@@ -78,13 +78,15 @@ export function NoteChips({ note }: { note: Note }) {
   );
 }
 
-export function NoteCard({ note, highlight }: { note: Note; highlight?: boolean }) {
+/** terms: 기록 화면 검색어 (찾은 곳을 표시하고, 긴 기록도 펼쳐 보여 준다) */
+export function NoteCard({ note, highlight, terms }: { note: Note; highlight?: boolean; terms?: string[] }) {
   const { toast, bump, navigate } = useStore();
   const [editing, setEditing] = useState<null | "manual" | "edit">(null);
   const [rawEdit, setRawEdit] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
   const unclassified = note.status === "failed" || note.status === "pending";
-  const long = note.raw_text.length > 220;
+  const searching = (terms?.length ?? 0) > 0;
+  const long = note.raw_text.length > 220 && !searching;
   // 학생 명렬표에서 '연락처·주소 가리기'를 켜면 기록에서도 가린다
   const masked = useMaskContacts();
 
@@ -102,7 +104,7 @@ export function NoteCard({ note, highlight }: { note: Note; highlight?: boolean 
   const moveTrack = async (track: "general" | "work") => {
     try {
       await api.setNoteTrack(note.id, track);
-      toast(track === "work" ? "정리된 업무기록으로 옮겼습니다." : "일반 기록으로 되돌렸습니다.");
+      toast(track === "work" ? "정리된 기록으로 옮겼습니다." : "기타 기록으로 되돌렸습니다.");
       bump();
     } catch (e) {
       toast(errorText(e), "error");
@@ -152,13 +154,17 @@ export function NoteCard({ note, highlight }: { note: Note; highlight?: boolean 
           </button>
         )}
         <span className={`track-tag ${note.is_work ? "work" : "general"}`} title={note.track ? "직접 옮긴 기록입니다. AI가 다시 분류해도 바뀌지 않습니다." : undefined}>
-          {note.is_work ? "업무기록" : "일반 기록"}
+          {note.is_work ? "정리된 기록" : "기타 기록"}
           {note.track && " · 직접 옮김"}
         </span>
       </header>
-      {note.summary && <p className="note-summary">{masked ? maskText(note.summary) : note.summary}</p>}
+      {note.summary && (
+        <p className="note-summary">
+          <Marked text={masked ? maskText(note.summary) : note.summary} terms={terms} />
+        </p>
+      )}
       {rawEdit === null ? (
-        <p className={`note-raw ${long && !expanded ? "clamp" : ""}`}><TextLines text={masked ? maskText(note.raw_text) : note.raw_text} /></p>
+        <p className={`note-raw ${long && !expanded ? "clamp" : ""}`}><TextLines text={masked ? maskText(note.raw_text) : note.raw_text} terms={terms} /></p>
       ) : (
         <div className="raw-edit">
           <textarea value={rawEdit} rows={Math.min(10, Math.max(3, rawEdit.split("\n").length + 1))} onChange={(e) => setRawEdit(e.target.value)} />
@@ -223,11 +229,11 @@ export function NoteCard({ note, highlight }: { note: Note; highlight?: boolean 
         <span className="grow" />
         {note.is_work ? (
           <button className="ghost" onClick={() => void moveTrack("general")}>
-            일반으로 되돌리기
+            기타 기록으로 되돌리기
           </button>
         ) : (
           <button className="ghost" onClick={() => void moveTrack("work")} disabled={note.status === "processing"}>
-            업무기록으로 보내기
+            정리된 기록으로 보내기
           </button>
         )}
         <button className="ghost" onClick={() => setRawEdit(note.raw_text)} disabled={rawEdit !== null}>

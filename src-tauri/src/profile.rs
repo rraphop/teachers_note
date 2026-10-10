@@ -1,6 +1,6 @@
 //! 기록 속 학생 개인정보 → 학생 명렬표 (2차 수정목록 8번)
 //!
-//! - 전화번호·보호자 연락처(관계 + 번호, 최대 4개)·주소·성별·생일·학생개인번호·이전학적은 AI보다 먼저 **형식 규칙**으로 찾는다.
+//! - 전화번호·보호자 연락처(관계 + 번호, 최대 4개)·주소·성별·생일·학생개인번호·이전학적·학급 번호는 AI보다 먼저 **형식 규칙**으로 찾는다.
 //! - 찾은 문장은 학생부 참고자료·할 일·일정으로 보내지 않고 명렬표의 그 학생 칸에 넣는다.
 //! - 이미 값이 있으면 덮어쓰지 않고 "기존 → 새 값" 확인을 기다린다(pending). 넣은 것·고른 것은 모두 이력으로 남는다.
 //! - 특이사항으로 보이는 내용(건강·주의가 필요한 사정)은 기록 카드에서 "어디에 둘까요?"를 묻는다.
@@ -17,7 +17,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 
 /// 명렬표 칸 (기록에서 찾아 넣는 것만. 비고는 직접 입력, 특이사항은 물어본 뒤)
-pub const FIELDS: [&str; 7] = ["phone", "guardian", "address", "gender", "birthday", "student_no", "prev_record"];
+pub const FIELDS: [&str; 8] = ["phone", "guardian", "address", "gender", "birthday", "student_no", "prev_record", "number"];
 pub const MAX_CONTACTS: usize = 4;
 
 pub fn field_label(f: &str) -> &'static str {
@@ -29,6 +29,7 @@ pub fn field_label(f: &str) -> &'static str {
         "birthday" => "생일",
         "student_no" => "학생개인번호",
         "prev_record" => "이전학적",
+        "number" => "번호",
         "memo" => "특이사항",
         _ => "개인정보",
     }
@@ -81,6 +82,7 @@ static RE_BIRTHDAY: Lazy<Regex> =
 static RE_GENDER: Lazy<Regex> = Lazy::new(|| Regex::new(r"성별\s*(?:은|는|:)?\s*(남|여)|(남|여)학생\s*(?:임|이다|입니다|이며)").unwrap());
 static RE_STUDENT_NO: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?:학생\s*개인\s*번호|개인\s*번호)\s*(?:은|는|:)?\s*([0-9]{6,12})").unwrap());
 static RE_PREV: Lazy<Regex> = Lazy::new(|| Regex::new(r"이전\s*학적\s*(?:은|는|:)?\s*(.+)$").unwrap());
+static RE_CLASS_NUMBER: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?:출석|학급)?\s*번호\s*(?:는|은|가|이|를|을|:)?\s*([0-9]{1,2})").unwrap());
 
 /// 관계 낱말 (긴 것 먼저)
 const RELATIONS: [(&str, &str); 24] = [
@@ -201,6 +203,40 @@ pub fn find_hits(sentence: &str) -> Vec<Hit> {
         }
     }
     out
+}
+
+/// 학급 번호(출석번호): "3-1 홍길동 번호는 21번", "홍길동의 출석번호 7", "홍길동은 번호가 12번으로 바뀜".
+/// '번호' 바로 앞이 그 학생 이름(+은·는·의·이·가)일 때만 — "문항 번호 3번", "사물함 번호 12", "전화번호 010-…"는 아니다.
+pub fn find_number(sentence: &str, name: &str) -> Option<String> {
+    let name = name.trim();
+    if name.is_empty() {
+        return None;
+    }
+    for c in RE_CLASS_NUMBER.captures_iter(sentence) {
+        let (whole, num) = (c.get(0)?, c.get(1)?);
+        // 숫자 뒤에 숫자·하이픈 등이 이어지면 전화번호 같은 다른 번호
+        let rest = &sentence[num.end()..];
+        let mut it = rest.chars();
+        let next_ok = match it.next() {
+            None => true,
+            Some(ch) if ch.is_ascii_digit() || matches!(ch, '-' | ':' | '~' | '/') => false,
+            Some('.') => !it.next().is_some_and(|d| d.is_ascii_digit()),
+            Some(_) => true,
+        };
+        if !next_ok {
+            continue;
+        }
+        let before = sentence[..whole.start()].trim_end().trim_end_matches([',', '·']).trim_end();
+        let owner = before.ends_with(name) || ["의", "은", "는", "이", "가"].iter().any(|p| before.strip_suffix(p).is_some_and(|b| b.ends_with(name)));
+        if !owner {
+            continue;
+        }
+        let n: u32 = num.as_str().parse().ok()?;
+        if (1..=99).contains(&n) {
+            return Some(n.to_string());
+        }
+    }
+    None
 }
 
 /// 특이사항으로 보이는 문장 (건강·주의가 필요한 사정). 출결 문장은 출결로 둔다.
@@ -332,6 +368,7 @@ fn current_value(conn: &Connection, student_id: i64, field: &str) -> AppResult<S
     let col = match field {
         "phone" | "address" | "gender" | "student_no" | "prev_record" => field,
         "birthday" => "COALESCE(birthday,'')",
+        "number" => "COALESCE(CAST(number AS TEXT),'')",
         "memo" => "memo",
         _ => return Ok(String::new()),
     };
@@ -403,7 +440,17 @@ fn apply_one(conn: &Connection, note_id: i64, sid: i64, item: &ProfileItem, sour
     if cur.trim() == value {
         return Ok(());
     }
-    if cur.trim().is_empty() {
+    // 같은 학급에 이미 그 번호인 학생이 있으면 바로 넣지 않고 확인을 기다린다
+    let taken = item.field == "number"
+        && conn
+            .query_row(
+                "SELECT 1 FROM students o JOIN students s ON s.id=?1 WHERE o.id<>s.id AND o.archived=0 AND o.class_id IS s.class_id AND o.number=?2",
+                params![sid, value.parse::<i64>().unwrap_or(-1)],
+                |_| Ok(()),
+            )
+            .optional()?
+            .is_some();
+    if cur.trim().is_empty() && !taken {
         students::set_roster_field(conn, sid, &item.field, value, now)?;
         log_change(conn, Some(note_id), sid, &item.field, "", "", value, "applied", None, source, now)?;
     } else {
@@ -718,6 +765,60 @@ mod tests {
         // 개인정보가 없는 문장
         assert!(fields("홍길동 수업 중 발표를 잘함").is_empty());
         assert!(fields("10월 12일 3교시 공개수업").is_empty());
+    }
+
+    #[test]
+    fn finds_class_number_only_right_after_the_name() {
+        assert_eq!(find_number("3-1 홍길동 번호는 21번", "홍길동"), Some("21".into()));
+        assert_eq!(find_number("홍길동의 출석번호 7", "홍길동"), Some("7".into()));
+        assert_eq!(find_number("홍길동은 번호가 12번으로 바뀜.", "홍길동"), Some("12".into()));
+        assert_eq!(find_number("홍길동 번호를 05번으로 변경", "홍길동"), Some("5".into()));
+        assert_eq!(find_number("홍길동 전화번호 010-1234-5678", "홍길동"), None);
+        assert_eq!(find_number("홍길동 번호 010-1234-5678", "홍길동"), None, "전화번호");
+        assert_eq!(find_number("홍길동 사물함 번호 12", "홍길동"), None);
+        assert_eq!(find_number("홍길동 수행평가 문항 번호 3번 틀림", "홍길동"), None);
+        assert_eq!(find_number("홍길동 학생개인번호 9000000001", "홍길동"), None);
+        assert_eq!(find_number("홍길동 번호 바뀜", "홍길동"), None);
+        assert_eq!(find_number("홍길동 번호는 0번", "홍길동"), None);
+    }
+
+    #[test]
+    fn class_number_fills_empty_and_asks_when_taken() {
+        let db = crate::db::Db::open_in_memory().unwrap();
+        db.with(|c| {
+            let now = util::parse_dt("2026-10-09T09:00:00").unwrap();
+            let mk = |name: &str, number: Option<i64>| students::create_student(c, &students::StudentInput { name: name.into(), class_label: Some("3-1".into()), number, memo: None }, now);
+            let hong = mk("홍길동", None)?;
+            let _other = mk("성춘향", Some(20))?;
+            let note = crate::notes::create_note(c, "3-1 홍길동 번호는 21번", now)?;
+            let item = |v: &str| ProfileItem {
+                field: "number".into(),
+                value: v.into(),
+                relation: String::new(),
+                student: PlanStudent { student_id: Some(hong), name: "홍길동".into(), class_label: Some("3-1".into()), number: None, candidates: vec![] },
+                text: String::new(),
+            };
+            apply(c, note, &[item("21")], &[], "ai", now, now, &mut vec![])?;
+            assert_eq!(students::get_student(c, hong)?.number, Some(21), "빈 번호는 바로 넣는다");
+            let h = history(c, hong)?;
+            assert_eq!((h[0].field_label.as_str(), h[0].status.as_str()), ("번호", "applied"));
+            // 이미 번호가 있으면 확인을 기다린다
+            let note2 = crate::notes::create_note(c, "3-1 홍길동 번호는 22번", now)?;
+            apply(c, note2, &[item("22")], &[], "ai", now, now, &mut vec![])?;
+            assert_eq!(students::get_student(c, hong)?.number, Some(21));
+            let (pending, _) = for_note(c, note2)?;
+            assert_eq!((pending[0].old_value.as_str(), pending[0].new_value.as_str(), pending[0].status.as_str()), ("21", "22", "pending"));
+            resolve_change(c, pending[0].id, true, None, now)?;
+            assert_eq!(students::get_student(c, hong)?.number, Some(22));
+            // 같은 학급에 이미 그 번호인 학생이 있으면 비어 있어도 확인을 기다린다
+            students::set_roster_field(c, hong, "number", "", now)?;
+            let note3 = crate::notes::create_note(c, "3-1 홍길동 번호는 20번", now)?;
+            apply(c, note3, &[item("20")], &[], "ai", now, now, &mut vec![])?;
+            assert_eq!(students::get_student(c, hong)?.number, None);
+            assert_eq!(for_note(c, note3)?.0[0].status, "pending");
+            Ok(())
+        })
+        .unwrap();
     }
 
     #[test]

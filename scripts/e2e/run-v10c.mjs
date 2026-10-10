@@ -1,5 +1,5 @@
 // 1.0 3차 수정목록 E2E: 학생 명렬표 표 폭(비율로 화면 채우기)·학생 추가 줄(학급·다음 번호), 기록 줄바꿈 표시,
-//   끝난 일은 할 일로 만들지 않기, 할 일 완료 → 완료 기록(일반 기록·업무 기록)과 되돌리기, 창 닫기 → 트레이·빠른 기록 창·종료,
+//   끝난 일은 할 일로 만들지 않기, 할 일 완료 → 완료 기록(기타 기록·업무 기록)과 되돌리기, 창 닫기 → 트레이·빠른 기록 창·종료,
 //   (gguf 를 주면) AI 계산 장치: 그래픽카드가 있으면 GPU, CPU 만 설정과 속도 비교.
 // 학생·학교·기관 이름은 모두 가짜(홍길동 등, OO군청)다.
 // 실행: node scripts/e2e/run-v10c.mjs <teachers_note.exe> <데이터폴더> <스크린샷폴더> [gguf 경로]
@@ -210,7 +210,7 @@ try {
   const notes = await app.invoke("list_notes", { filter: { limit: 100 } });
   const doneNote = notes.find((n) => n.from_task_id !== null && n.raw_text.endsWith("OO교육청 공문 회신"));
   check(
-    "업무 없는 할 일 완료 → 일반 기록 ‘M월 D일 HH:MM 완료 · 제목’",
+    "업무 없는 할 일 완료 → 기타 기록 ‘M월 D일 HH:MM 완료 · 제목’",
     !!doneNote && /^\d{1,2}월 \d{1,2}일 \d{2}:\d{2} 완료 · OO교육청 공문 회신$/.test(doneNote.raw_text) && !doneNote.is_work && doneNote.status === "classified",
     doneNote?.raw_text,
   );

@@ -1,5 +1,5 @@
 // 0.7 E2E: 나이스 명렬표 가져오기(가짜 파일), 학생 상세의 숨김 정보, 날짜 문장의 제목·시각·메모, 학년·학급 인식,
-//          기록 두 탭(일반 기록 / 정리된 업무기록), 오늘의 기록에서 일반 기록 흐리게, 라이선스 및 저작권
+//          기록 세 탭(모든 기록 / 기타 기록 / 정리된 기록)과 기록 안 검색, 오늘의 기록에서 기타 기록 흐리게, 라이선스 및 저작권
 // 실행: node scripts/e2e/run-v07.mjs <exe> <데이터폴더> <스크린샷폴더> <가짜명렬표폴더>
 // 가짜 명렬표는 `cargo test --lib neis_roster::tests::write_fake_roster_files -- --ignored` (TN_FAKE_ROSTER_DIR) 로 만든다.
 import fs from "node:fs/promises";
@@ -127,34 +127,34 @@ try {
   await app.invoke("delete_note", { id: n3.id });
   await app.invoke("save_plan", { id: n2.id, plan: plan2 });
 
-  // ── 5. 기록 두 탭 ──
+  // ── 5. 기록 세 탭과 기록 안 검색 ──
   const g = await app.invoke("create_note", { raw: "OO중 교무부장 연락옴" });
   await app.invoke("save_plan", { id: g.id, plan: await app.invoke("suggest_plan", { id: g.id }) });
   await app.nav("기록");
   await sleep(700);
   const seg = await app.text(".page-head .seg");
-  check("기록 화면 탭: 일반 기록 / 정리된 업무기록", seg.includes("일반 기록") && seg.includes("정리된 업무기록") && !seg.includes("미분류"), seg.replace(/\n/g, " "));
+  check("기록 화면 탭: 모든 기록 / 기타 기록 / 정리된 기록", seg.includes("모든 기록") && seg.includes("기타 기록") && seg.includes("정리된 기록") && !seg.includes("미분류"), seg.replace(/\n/g, " "));
   const generalIds = async () => (await app.invoke("list_notes", { filter: { track: "general" } })).map((n) => n.id);
   const workIds = async () => (await app.invoke("list_notes", { filter: { track: "work" } })).map((n) => n.id);
-  check("항목이 없는 기록은 일반, 정리된 기록은 업무기록", (await generalIds()).includes(g.id) && (await workIds()).includes(n1.id) && (await workIds()).includes(n2.id), "");
+  check("항목이 없는 기록은 기타 기록, 정리된 기록은 정리된 기록", (await generalIds()).includes(g.id) && (await workIds()).includes(n1.id) && (await workIds()).includes(n2.id), "");
   await app.screenshot(path.join(shots, "62-notes-general.png"));
-  await app.evaluate(`(() => { const card = document.getElementById('note-${g.id}'); [...card.querySelectorAll('button')].find(b => b.innerText.includes('업무기록으로 보내기')).click(); return true; })()`);
+  await app.evaluate(`(() => { const card = document.getElementById('note-${g.id}'); [...card.querySelectorAll('button')].find(b => b.innerText.includes('정리된 기록으로 보내기')).click(); return true; })()`);
   await sleep(700);
-  check("[업무기록으로 보내기] → 업무기록 탭으로", (await workIds()).includes(g.id) && !(await generalIds()).includes(g.id), "");
-  await app.click("정리된 업무기록", ".page-head .seg button");
+  check("[정리된 기록으로 보내기] → 정리된 기록 탭으로", (await workIds()).includes(g.id) && !(await generalIds()).includes(g.id), "");
+  await app.click("정리된 기록", ".page-head .seg button");
   await sleep(700);
   const tag = await app.text(`#note-${g.id} .track-tag`);
   check("직접 옮긴 기록 표시", tag.includes("직접 옮김"), tag);
   await app.screenshot(path.join(shots, "63-notes-work.png"));
-  await app.evaluate(`(() => { const card = document.getElementById('note-${g.id}'); [...card.querySelectorAll('button')].find(b => b.innerText.includes('일반으로 되돌리기')).click(); return true; })()`);
+  await app.evaluate(`(() => { const card = document.getElementById('note-${g.id}'); [...card.querySelectorAll('button')].find(b => b.innerText.includes('기타 기록으로 되돌리기')).click(); return true; })()`);
   await sleep(700);
-  check("[일반으로 되돌리기] → 일반 기록 탭으로", (await generalIds()).includes(g.id), "");
+  check("[기타 기록으로 되돌리기] → 기타 기록 탭으로", (await generalIds()).includes(g.id), "");
 
-  // ── 6. 오늘의 기록: 일반 기록은 흐리게 ──
+  // ── 6. 오늘의 기록: 기타 기록은 흐리게 ──
   await app.nav("오늘");
   await sleep(800);
   const op = await app.evaluate(`(() => { const c = document.getElementById('note-${g.id}'); const w = document.getElementById('note-${n1.id}'); return { g: c ? getComputedStyle(c).opacity : null, w: w ? getComputedStyle(w).opacity : null }; })()`);
-  check("오늘의 기록: 일반 기록은 흐리게, 업무기록은 또렷하게", Number(op.g) < 0.9 && Number(op.w) === 1, JSON.stringify(op));
+  check("오늘의 기록: 기타 기록은 흐리게, 정리된 기록은 또렷하게", Number(op.g) < 0.9 && Number(op.w) === 1, JSON.stringify(op));
   await app.evaluate(`document.getElementById('today-notes').scrollIntoView({ block: 'start' }); true`);
   await sleep(300);
   await app.screenshot(path.join(shots, "64-today-notes-dim.png"));
@@ -184,7 +184,7 @@ try {
   await app.evaluate(`document.querySelector('.update-log-btn').click()`);
   await waitFor(() => app.evaluate(`!!document.querySelector('.changelog')`), { label: "업데이트 기록" });
   const log = await app.text(".dialog");
-  check("업데이트 기록: v1.0 기능 소개 (나이스 명렬표·정리된 업무기록)", log.includes("v1.0") && log.includes("나이스 명렬표") && log.includes("정리된 업무기록"), "");
+  check("업데이트 기록: v1.0 기능 소개 (나이스 명렬표·정리된 기록)", log.includes("v1.0") && log.includes("나이스 명렬표") && log.includes("정리된 기록"), "");
 } catch (e) {
   check("E2E 실행", false, e instanceof Error ? e.stack ?? e.message : String(e));
 } finally {

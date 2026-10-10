@@ -484,6 +484,21 @@ button:focus-visible {
   font-size: 0.9rem;
   margin: 0 0 14px;
 }
+/* 기록 화면: 기록 안에서 찾기 */
+.notes-search {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin: 0 0 10px;
+}
+.notes-search input[type="search"] {
+  flex: 1 1 320px;
+  min-width: 0;
+}
+.notes-search-hint {
+  margin: -4px 0 10px;
+}
 .panel {
   background: var(--panel);
   border: 1px solid var(--line);

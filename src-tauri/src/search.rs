@@ -45,7 +45,7 @@ fn fts_phrase(term: &str) -> String {
     format!("\"{}\"", term.replace('"', "\"\""))
 }
 
-fn like_pattern(term: &str) -> String {
+pub(crate) fn like_pattern(term: &str) -> String {
     let esc = term.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_");
     format!("%{esc}%")
 }

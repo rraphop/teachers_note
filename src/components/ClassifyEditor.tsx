@@ -18,6 +18,7 @@ const PROFILE_LABEL: Record<string, string> = {
   birthday: "생일",
   student_no: "학생개인번호",
   prev_record: "이전학적",
+  number: "번호",
 };
 
 function blankItem(kind: ItemKind): PlanItem {

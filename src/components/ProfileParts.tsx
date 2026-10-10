@@ -94,6 +94,7 @@ function ProfileConfirm({ c }: { c: ProfileChange }) {
       ) : (
         <p className="small">
           기존: <span className="old">{shown(c.field, c.old_value, masked) || "(없음)"}</span> → 새 값: <b>{shown(c.field, c.new_value, masked)}</b>
+          {c.field === "number" && !c.old_value && <> · 같은 학급에 이미 {c.new_value}번 학생이 있습니다.</>}
         </p>
       )}
       <div className="row gap">
