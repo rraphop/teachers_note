@@ -1,5 +1,6 @@
 // 1.0 3차 뒤 수정 E2E: 기록에 적은 학급 번호("번호는 21번") → 학생 명렬표 번호 칸 (학생부 자료로 보내지 않음),
-//   기록 화면 세 탭(모든 기록 / 기타 기록 / 정리된 기록)과 기록 안에서 찾기(낱말 모두 · 구 그대로 · 찾은 곳 표시).
+//   기록 화면 세 탭(모든 기록 / 기타 기록 / 정리된 기록)과 기록 안에서 찾기(낱말 모두 · 구 그대로 · 찾은 곳 표시),
+//   왼쪽 메뉴에서 여는 창(업데이트 기록)이 본문 위에 뜨고 휠이 창 안을 스크롤하는지.
 // 학생·기관 이름은 모두 가짜(홍길동 등, OO군청)다.
 // 실행: node scripts/e2e/run-v10d.mjs <teachers_note.exe> <데이터폴더> <스크린샷폴더>
 import fs from "node:fs/promises";
@@ -102,6 +103,33 @@ try {
   await sleep(900);
   const generalCount = (await app.invoke("list_notes", { filter: { track: "general", limit: 500 } })).length;
   check("지우기 → 기타 기록 전부", (await cards()) === generalCount, `${await cards()} / ${generalCount}`);
+
+  // ── 4. 업데이트 기록 창 (왼쪽 메뉴에서 여는 창): 본문 위에 뜨고, 휠은 창 안을 스크롤 ──
+  await app.nav("오늘");
+  await app.send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 640, deviceScaleFactor: 1, mobile: false });
+  await sleep(600);
+  await app.evaluate(`document.querySelector('.update-log-btn').click()`);
+  await waitFor(() => app.evaluate(`!!document.querySelector('.dialog .changelog')`), { label: "업데이트 기록" });
+  await sleep(300);
+  const box = await app.evaluate(`(() => {
+    const d = document.querySelector('.dialog'); const r = d.getBoundingClientRect();
+    const pts = [[r.left + r.width * 0.8, r.top + r.height * 0.5], [r.left + r.width * 0.5, r.bottom - 12], [r.left + 30, r.top + 70]];
+    return { underBody: d.closest('.overlay').parentElement === document.body, onTop: pts.every(([x, y]) => d.contains(document.elementFromPoint(x, y))),
+      inView: r.bottom <= window.innerHeight, locked: document.documentElement.classList.contains('modal-open'),
+      x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
+  })()`);
+  check("업데이트 기록 창이 본문(아래 입력창·급식 칸) 위에 뜸", box.underBody && box.onTop && box.inView, JSON.stringify(box));
+  const before = await app.evaluate(`({ body: document.querySelector('.dialog-body').scrollTop, page: window.scrollY, can: document.querySelector('.dialog-body').scrollHeight > document.querySelector('.dialog-body').clientHeight })`);
+  await app.send("Input.dispatchMouseEvent", { type: "mouseWheel", x: box.x, y: box.y, deltaX: 0, deltaY: 400 });
+  await sleep(600);
+  const after = await app.evaluate(`({ body: document.querySelector('.dialog-body').scrollTop, page: window.scrollY })`);
+  check("휠 → 업데이트 내용이 스크롤되고 뒤 화면은 그대로", before.can && after.body > before.body && after.page === before.page && box.locked, `${JSON.stringify(before)} → ${JSON.stringify(after)}`);
+  await app.screenshot(path.join(shots, "03-update-log-small.png"));
+  await app.evaluate(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))`);
+  await sleep(300);
+  const unlocked = await app.evaluate(`!document.querySelector('.dialog') && !document.documentElement.classList.contains('modal-open')`);
+  check("Esc 로 닫으면 뒤 화면 스크롤 다시 됨", unlocked, "");
+  await app.send("Emulation.clearDeviceMetricsOverride", {});
 } catch (e) {
   check("E2E 실행", false, e instanceof Error ? e.stack ?? e.message : String(e));
 } finally {

@@ -65,5 +65,5 @@
 
 | 파일 | SHA-256 |
 |---|---|
-| Teachers_Note_1.0.0.exe | `79fb2a011f5758002f1fb3167af89e011d4b7c3f357e009a8a55f0c37dc26de8` |
-| Teachers_Note_1.0.0_portable.zip | `41c2a3a2145e71d66760e6910ae860420ca6529a49d14e4297a3150f6a37f208` |
+| Teachers_Note_1.0.0.exe | `a6ab1b9a748d52770460f8e55c14e48e558dcd5a5f54c63d764c9ab42dc3547a` |
+| Teachers_Note_1.0.0_portable.zip | `5d03381bc831741e057b6bf1391deb550b50860c64cf8bce135a2067cbe1b281` |

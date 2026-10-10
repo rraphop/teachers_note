@@ -1075,6 +1075,15 @@ label.inline {
   padding: 5vh 16px;
   z-index: 100;
   overflow: auto;
+  overscroll-behavior: contain;
+}
+/* 창이 열려 있는 동안 뒤 화면은 스크롤하지 않는다 */
+html.modal-open,
+html.modal-open body {
+  overflow: hidden;
+}
+html.modal-gutter {
+  scrollbar-gutter: stable;
 }
 .dialog {
   background: var(--panel);
@@ -1100,6 +1109,8 @@ label.inline {
 .dialog-body {
   padding: 6px 18px 12px;
   overflow: auto;
+  overscroll-behavior: contain;
+  min-height: 0;
 }
 .dialog-foot {
   display: flex;
