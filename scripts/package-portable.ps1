@@ -220,6 +220,23 @@ $singleHash = (Get-FileHash $single -Algorithm SHA256).Hash.ToLower()
 [System.IO.File]::WriteAllText((Join-Path $OutRoot "$singleName.sha256"), "$singleHash  $singleName`r`n", (New-Object System.Text.UTF8Encoding($false)))
 Write-Host "파일 하나: $single ($([math]::Round((Get-Item $single).Length / 1MB, 1))MB) sha256=$singleHash"
 
+# 배포용 압축: 영문 이름 Teachers_Note_버전.zip 안에 한글 이름 교무수첩_버전.exe 하나만 (깃허브 릴리스·홈페이지에 올리는 파일).
+# 이름이 한글로 보이도록 UTF-8 이름 표시를 켠다.
+Add-Type -AssemblyName System.IO.Compression
+$releaseZipName = "Teachers_Note_$appVersion.zip"
+$releaseZip = Join-Path $OutRoot $releaseZipName
+if (Test-Path $releaseZip) { Remove-Item -Force $releaseZip }
+$zfs = [System.IO.File]::Open($releaseZip, 'CreateNew')
+$za = New-Object System.IO.Compression.ZipArchive($zfs, [System.IO.Compression.ZipArchiveMode]::Create, $false, [System.Text.Encoding]::UTF8)
+[void][System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($za, $single, "교무수첩_$appVersion.exe", [System.IO.Compression.CompressionLevel]::Optimal)
+$za.Dispose(); $zfs.Dispose()
+$zr = [System.IO.Compression.ZipFile]::OpenRead($releaseZip)
+$entries = @($zr.Entries | ForEach-Object { $_.FullName }); $zr.Dispose()
+if ($entries.Count -ne 1 -or $entries[0] -ne "교무수첩_$appVersion.exe") { throw "배포용 압축 안의 파일이 이상합니다: $($entries -join ', ')" }
+$releaseZipHash = (Get-FileHash $releaseZip -Algorithm SHA256).Hash.ToLower()
+[System.IO.File]::WriteAllText((Join-Path $OutRoot "$releaseZipName.sha256"), "$releaseZipHash  $releaseZipName`r`n", (New-Object System.Text.UTF8Encoding($false)))
+Write-Host "배포용 압축: $releaseZip ($([math]::Round((Get-Item $releaseZip).Length / 1MB, 1))MB, 안에 교무수첩_$appVersion.exe) sha256=$releaseZipHash"
+
 function Invoke-SingleTest($dataRoot, $label) {
   $report = Join-Path $dataRoot "report-$([guid]::NewGuid().ToString('N')).json"
   $env:TN_DATA_ROOT = $dataRoot
@@ -260,7 +277,7 @@ Step '10. Windows 보안(Defender) 검사 — 격리하지 않고 검사만'
 # 내려받은 사람의 PC에서 막히지 않는지 미리 본다. 탐지되면 배포하지 말고 원인을 찾는다.
 $mp = Join-Path $env:ProgramFiles 'Windows Defender\MpCmdRun.exe'
 if (Test-Path $mp) {
-  foreach ($f in @($single, $Zip, (Join-Path $Pkg 'teachers_note.exe'))) {
+  foreach ($f in @($single, $releaseZip, $Zip, (Join-Path $Pkg 'teachers_note.exe'))) {
     $out = & $mp -Scan -ScanType 3 -File $f -DisableRemediation 2>&1 | Out-String
     if ($LASTEXITCODE -eq 2) {
       $name = (($out -split "`n") | Where-Object { $_ -match '^Threat\s' }) -join ' '
@@ -272,4 +289,4 @@ if (Test-Path $mp) {
   Write-Warning 'Windows 보안 검사 도구(MpCmdRun.exe)가 없어 검사를 건너뜁니다.'
 }
 
-Write-Host "`n완료: $Zip`n      $single" -ForegroundColor Green
+Write-Host "`n완료: $releaseZip (배포용)`n      $Zip`n      $single" -ForegroundColor Green
