@@ -1,6 +1,6 @@
 [package]
 name = "teachers_note"
-version = "1.0.0"
+version = "1.0.1"
 description = "로컬 AI 교무수첩 (Local Teacher Notebook)"
 edition = "2024"
 rust-version = "1.92"

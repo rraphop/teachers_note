@@ -1,7 +1,8 @@
 // 기록 글을 화면에 줄 단위로 나눈다 (3차 4번). 원문은 고치지 않고 표시만 바꾼다.
 // - 사용자가 Enter 로 나눈 줄은 그대로
-// - 한 줄 안에서 새 날짜·시각("10.6. 오전 9:40", "09:46", "10월 6일")이 나오면 그 앞에서 줄을 바꾼다
+// - 한 줄 안에서 새 날짜·시각("10.6. 오전 9:40", "09:46", "10월 6일")이 새 항목의 맨 앞에 오면 그 앞에서 줄을 바꾼다
 //   (다만 "10월 6일까지", "9:30~10:30" 처럼 기한·범위로 쓰인 것은 나누지 않는다)
+// - "점심은 12:20", "15:15에 시작"처럼 문장 안에 들어간 시각은 나누지 않는다 (4차 2번)
 // - 줄 맨 앞의 날짜·시각은 굵게 보이도록 따로 돌려준다
 
 export interface TextLine {
@@ -23,6 +24,12 @@ const MARK = new RegExp(`(?<![\\d.:/])(?:${DATE}(?:\\s+(?:${TIME}))?|${TIME})(?!
 const DEADLINE_AFTER = /^\s*(?:까지|부터|마감|전에|전까지|이내|안에|사이|중에|에서|~|-|–)/;
 // 앞에 이런 표시가 있으면 범위의 뒷부분
 const RANGE_BEFORE = /(?:~|-|–|부터)\s*$/;
+// 앞 내용이 문장부호로 끝났으면 새 항목이다
+const ITEM_END_BEFORE = /[.,;!?。)\]…]\s*$/;
+// 앞 낱말이 조사로 끝나면("점심은 12:20") 시각이 문장 안에 들어 있다
+const PARTICLE_BEFORE = /[가-힣](?:은|는|을|를|에|에서|에게|한테|으로|부터|까지)\s+$/;
+// 시각 바로 뒤에 조사가 붙으면("15:15에 시작") 문장 안의 시각이다
+const PARTICLE_AFTER = /^(?:에|은|는|을|를|으로|로|에는|엔)(?![가-힣])/;
 
 /** 한 줄 안에서 줄을 바꿀 자리 (표시가 시작하는 위치들) */
 function breakPoints(line: string): number[] {
@@ -34,6 +41,8 @@ function breakPoints(line: string): number[] {
     const after = line.slice(at + m[0].length);
     if (!before.trim()) continue; // 줄 맨 앞
     if (DEADLINE_AFTER.test(after) || RANGE_BEFORE.test(before)) continue;
+    // 문장부호 뒤가 아니면, 조사로 이어진 시각은 문장의 일부다
+    if (!ITEM_END_BEFORE.test(before) && (PARTICLE_BEFORE.test(before) || PARTICLE_AFTER.test(after))) continue;
     out.push(at);
   }
   return out;

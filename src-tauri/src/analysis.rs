@@ -302,10 +302,16 @@ const NAME_PARTICLES: [&str; 27] = [
     "와", "과", "도", "만", "께", "에", "로",
 ];
 
-const NAME_STOPWORDS: [&str; 30] = [
+const NAME_STOPWORDS: [&str; 41] = [
     "학생", "전체", "모두", "담임", "교실", "친구", "아이", "학급", "교과", "수업", "남학생", "여학생", "학부모", "보호자",
     "부모", "어머니", "아버지", "선생", "교사", "반장", "부반장", "회장", "교시", "모둠", "일부", "몇몇", "우리", "대상", "명단", "전원",
+    // 학생 여럿·학적을 가리키는 말 (4차 2번: "전학생"처럼 학급 전체를 학생 하나로 묶지 않는다)
+    "전학생", "전입생", "전출생", "신입생", "편입생", "전교생", "재학생", "졸업생", "학생회", "학생들", "아이들",
 ];
+/// 이름처럼 보여도 사람 이름이 아닌 말 ("전학생"은 성 '전' + 두 글자처럼 보인다)
+fn is_name_stopword(name: &str) -> bool {
+    NAME_STOPWORDS.contains(&name) || name.ends_with("학생") || name.ends_with("생들")
+}
 const DOUBLE_SURNAMES: [&str; 8] = ["남궁", "황보", "제갈", "선우", "독고", "사공", "서문", "동방"];
 const NAME_TAIL_WORDS: [&str; 12] = ["지각", "결석", "조퇴", "결과", "학생", "상담", "발표", "외출", "등교", "하교", "면담", "보건"];
 
@@ -364,7 +370,7 @@ pub fn clean_name(token: &str) -> Option<String> {
 /// 명단에 없는 이름을 새 학생으로 만들 만큼 사람 이름다운가 (성 + 이름 형태)
 pub fn plausible_full_name(name: &str) -> bool {
     let n = char_len(name);
-    if !name.chars().all(|c| ('가'..='힣').contains(&c)) {
+    if !name.chars().all(|c| ('가'..='힣').contains(&c)) || is_name_stopword(name) {
         return false;
     }
     if DOUBLE_SURNAMES.iter().any(|d| name.starts_with(d)) {
@@ -469,7 +475,7 @@ fn mention_in_class(
 /// 3) 성을 뺀 이름 ("길동이가 발표함") — 명단에서 하나로 정해질 때만
 pub fn find_students(text: &str, roster: &[RosterEntry]) -> Vec<StudentMention> {
     let mut out: Vec<StudentMention> = Vec::new();
-    let mut names: Vec<&str> = roster.iter().map(|r| r.name.as_str()).filter(|n| char_len(n) >= 2).collect();
+    let mut names: Vec<&str> = roster.iter().map(|r| r.name.as_str()).filter(|n| char_len(n) >= 2 && !is_name_stopword(n)).collect();
     names.sort_by(|a, b| char_len(b).cmp(&char_len(a)).then(a.cmp(b)));
     names.dedup();
 
@@ -611,12 +617,16 @@ pub fn find_students(text: &str, roster: &[RosterEntry]) -> Vec<StudentMention> 
         }
     }
     for (g, entries) in &given {
+        // "전학생"의 '학생'처럼 흔한 낱말이면 이름으로 보지 않는다 (4차 2번: "학생자치회"가 학생 한 명으로 잡히던 문제)
+        if is_name_stopword(g) || NAME_TAIL_WORDS.contains(&g.as_str()) || entries.iter().all(|r| is_name_stopword(&r.name)) {
+            continue;
+        }
         for (pos, _) in text.match_indices(g.as_str()) {
             let span = Span { start: pos, end: pos + g.len() };
             if out.iter().any(|o| o.span.overlaps(&span)) {
                 continue;
             }
-            if text[..pos].chars().next_back().is_some_and(is_hangul) {
+            if text[..pos].chars().next_back().is_some_and(is_hangul) || !name_ends_here(text, span.end, char_len(g)) {
                 continue;
             }
             let (roster_id, candidates) = if entries.len() == 1 {
@@ -684,6 +694,13 @@ pub fn is_in_class(s: &str) -> bool {
 static RE_EVENT_NOUN: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r"협의회|설명회|연수회|발표회|간담회|토론회|보고회|평가회|위원회|총회|상담\s*주간|확인\s*주간|시상식|입학식|졸업식|개학식|방학식|체육\s*대회|축제").unwrap()
 });
+
+/// 선생님 본인에게 배정된 일 (4차 1번): 시험감독·보강·출장·연수·당직·출제·채점·수업 교체.
+/// 과목명·교시가 함께 있어도 학생 관찰이 아니라 교무 업무다.
+static RE_OWN_DUTY: Lazy<Regex> = Lazy::new(|| Regex::new(r"시험\s*감독|감독|보강|출장|연수|당직|출제|채점|수업\s*교체|교체\s*수업").unwrap());
+pub fn own_duty_word(s: &str) -> bool {
+    RE_OWN_DUTY.is_match(s)
+}
 
 pub fn has_action(s: &str) -> bool {
     let stripped = RE_EVENT_NOUN.replace_all(s, " ");

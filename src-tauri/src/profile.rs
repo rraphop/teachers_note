@@ -17,7 +17,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 
 /// 명렬표 칸 (기록에서 찾아 넣는 것만. 비고는 직접 입력, 특이사항은 물어본 뒤)
-pub const FIELDS: [&str; 8] = ["phone", "guardian", "address", "gender", "birthday", "student_no", "prev_record", "number"];
+pub const FIELDS: [&str; 9] = ["phone", "guardian", "address", "gender", "birthday", "student_no", "prev_record", "number", "remark"];
 pub const MAX_CONTACTS: usize = 4;
 
 pub fn field_label(f: &str) -> &'static str {
@@ -30,6 +30,7 @@ pub fn field_label(f: &str) -> &'static str {
         "student_no" => "학생개인번호",
         "prev_record" => "이전학적",
         "number" => "번호",
+        "remark" => "비고",
         "memo" => "특이사항",
         _ => "개인정보",
     }
@@ -239,6 +240,64 @@ pub fn find_number(sentence: &str, name: &str) -> Option<String> {
     None
 }
 
+/// 학적 변동 (4차 3번): 전학·전출·전입. 학생 관찰이 아니라 교사가 처리할 일이다.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Transfer {
+    /// 전입(들어옴)이면 true, 전출(나감)이면 false
+    pub incoming: bool,
+    /// 가는 곳·온 곳 ("OO중", "광주"). 모르면 빈칸
+    pub place: String,
+    /// 명렬표에 없는 전입생 이름 ("이름 홍길동")
+    pub name: Option<String>,
+    /// "3-2"처럼 적은 학급
+    pub class_label: Option<String>,
+}
+
+// "전학년"(모든 학년)·"전학생 대상"(모든 학생)은 학적 변동이 아니다
+static RE_TR_IN: Lazy<Regex> = Lazy::new(|| Regex::new(r"전입|전학\s*(?:옴|왔|와서|온다|오기로|올\s)|전학생\s*(?:이\s*)?(?:옴|왔|온|들어)").unwrap());
+static RE_TR_OUT: Lazy<Regex> = Lazy::new(|| Regex::new(r"전출|전학(?:[^년생]|$)").unwrap());
+static RE_TR_FROM: Lazy<Regex> = Lazy::new(|| Regex::new(r"([가-힣A-Za-z0-9]+?)(?:에서|으로부터|로부터)\s*(?:전입|전학)").unwrap());
+static RE_TR_TO: Lazy<Regex> = Lazy::new(|| Regex::new(r"([가-힣A-Za-z0-9]+?)(?:으로|로|에)?\s*(?:전출|전학)").unwrap());
+static RE_TR_NAME: Lazy<Regex> = Lazy::new(|| Regex::new(r"이름\s*(?:은|는|:)?\s*([가-힣]{2,4})").unwrap());
+static RE_TR_CLASS: Lazy<Regex> = Lazy::new(|| Regex::new(r"([1-6])\s*-\s*([0-9]{1,2})").unwrap());
+
+pub fn find_transfer(sentence: &str) -> Option<Transfer> {
+    let t = sentence.trim();
+    let incoming = RE_TR_IN.is_match(t);
+    if !incoming && !RE_TR_OUT.is_match(t) {
+        return None;
+    }
+    let re = if incoming { &*RE_TR_FROM } else { &*RE_TR_TO };
+    let place = re
+        .captures(t)
+        .map(|c| c[1].to_string())
+        // 날짜·학년·학급이나 '전입생' 같은 말은 학교 이름이 아니다
+        .filter(|w| {
+            !w.chars().any(|c| c.is_ascii_digit()) && !w.ends_with("학년") && !w.ends_with('반') && !w.ends_with('생') && !["전학", "전입", "전출"].contains(&w.as_str())
+        })
+        .unwrap_or_default();
+    let name = incoming.then(|| RE_TR_NAME.captures(t).map(|c| c[1].to_string())).flatten();
+    let class_label = RE_TR_CLASS.captures(t).map(|c| format!("{}-{}", &c[1], &c[2]));
+    Some(Transfer { incoming, place, name, class_label })
+}
+
+/// 명렬표 비고에 적을 말: "OO중 전학 예정 (10월 12일 기록)", "OO중에서 전입 (10월 12일 기록)"
+pub fn transfer_remark(t: &Transfer, student_name: &str, recorded: chrono::NaiveDate, when: Option<chrono::NaiveDate>) -> String {
+    use chrono::Datelike;
+    let place = if t.place == student_name { "" } else { t.place.as_str() };
+    let mut s = match (t.incoming, place.is_empty()) {
+        (true, false) => format!("{place}에서 전입"),
+        (true, true) => "전입".to_string(),
+        (false, false) => format!("{place} 전학 예정"),
+        (false, true) => "전학 예정".to_string(),
+    };
+    if let Some(d) = when.filter(|_| !t.incoming) {
+        s.push_str(&format!(", {}월 {}일", d.month(), d.day()));
+    }
+    s.push_str(&format!(" ({}월 {}일 기록)", recorded.month(), recorded.day()));
+    s
+}
+
 /// 특이사항으로 보이는 문장 (건강·주의가 필요한 사정). 출결 문장은 출결로 둔다.
 const SPECIAL_WORDS: [&str; 26] = [
     "어지러", "어지럼", "알레르기", "알러지", "천식", "아토피", "당뇨", "뇌전증", "간질", "빈혈", "복용", "투약", "지병", "특이체질", "발작", "공황",
@@ -369,6 +428,7 @@ fn current_value(conn: &Connection, student_id: i64, field: &str) -> AppResult<S
         "phone" | "address" | "gender" | "student_no" | "prev_record" => field,
         "birthday" => "COALESCE(birthday,'')",
         "number" => "COALESCE(CAST(number AS TEXT),'')",
+        "remark" => "remark",
         "memo" => "memo",
         _ => return Ok(String::new()),
     };
@@ -438,6 +498,22 @@ fn apply_one(conn: &Connection, note_id: i64, sid: i64, item: &ProfileItem, sour
     }
     let cur = current_value(conn, sid, &item.field)?;
     if cur.trim() == value {
+        return Ok(());
+    }
+    // 비고(학적 변동): 덮어쓰지 않고 뒤에 이어 적는다 (4차 3번)
+    if item.field == "remark" {
+        let cur = cur.trim();
+        if cur.contains(value) {
+            return Ok(());
+        }
+        let next = if cur.is_empty() { value.to_string() } else { format!("{cur} / {value}") };
+        if next.chars().count() > 200 {
+            // 비고 칸이 가득 차면 바꿀지 기록 카드에서 묻는다
+            log_change(conn, Some(note_id), sid, "remark", "", cur, value, "pending", None, source, now)?;
+        } else {
+            students::set_roster_field(conn, sid, "remark", &next, now)?;
+            log_change(conn, Some(note_id), sid, "remark", "", "", value, "applied", None, source, now)?;
+        }
         return Ok(());
     }
     // 같은 학급에 이미 그 번호인 학생이 있으면 바로 넣지 않고 확인을 기다린다
@@ -780,6 +856,51 @@ mod tests {
         assert_eq!(find_number("홍길동 학생개인번호 9000000001", "홍길동"), None);
         assert_eq!(find_number("홍길동 번호 바뀜", "홍길동"), None);
         assert_eq!(find_number("홍길동 번호는 0번", "홍길동"), None);
+    }
+
+    #[test]
+    fn finds_transfers() {
+        let t = find_transfer("2학년 홍길동 OO중 전학예정").unwrap();
+        assert_eq!((t.incoming, t.place.as_str()), (false, "OO중"));
+        let t = find_transfer("1-1 홍길동 10월 20일 광주로 전학").unwrap();
+        assert_eq!((t.incoming, t.place.as_str()), (false, "광주"));
+        let t = find_transfer("3학년에 OO중에서 전입생 옴, 이름 홍길동").unwrap();
+        assert_eq!((t.incoming, t.place.as_str(), t.name.as_deref()), (true, "OO중", Some("홍길동")));
+        let t = find_transfer("홍길동 전학 옴").unwrap();
+        assert_eq!((t.incoming, t.place.as_str()), (true, ""));
+        assert_eq!(find_transfer("전주로 전학 감").map(|t| t.place), Some("전주".into()), "'전'으로 시작하는 지명");
+        assert!(find_transfer("전학년 체육대회").is_none());
+        assert!(find_transfer("전학생 대상 설문").is_none(), "모든 학생");
+        let d = |m, dd| chrono::NaiveDate::from_ymd_opt(2026, m, dd).unwrap();
+        let t = find_transfer("홍길동 전학 감").unwrap();
+        assert_eq!(transfer_remark(&t, "홍길동", d(10, 12), None), "전학 예정 (10월 12일 기록)", "이름은 갈 곳이 아니다");
+    }
+
+    #[test]
+    fn remark_is_appended_not_overwritten() {
+        let db = crate::db::Db::open_in_memory().unwrap();
+        db.with(|c| {
+            let now = util::parse_dt("2026-10-12T12:06:00").unwrap();
+            let sid = students::create_student(c, &students::StudentInput { name: "홍길동".into(), class_label: Some("2-1".into()), number: Some(1), memo: None }, now)?;
+            students::set_roster_field(c, sid, "remark", "특별반", now)?;
+            let note = crate::notes::create_note(c, "2-1 홍길동 OO중 전학예정", now)?;
+            let item = ProfileItem {
+                field: "remark".into(),
+                value: "OO중 전학 예정 (10월 12일 기록)".into(),
+                relation: String::new(),
+                student: PlanStudent { student_id: Some(sid), name: "홍길동".into(), class_label: Some("2-1".into()), number: None, candidates: vec![] },
+                text: String::new(),
+            };
+            apply(c, note, &[item.clone()], &[], "ai", now, now, &mut vec![])?;
+            assert_eq!(current_value(c, sid, "remark")?, "특별반 / OO중 전학 예정 (10월 12일 기록)");
+            // 다시 분류해도 두 번 적지 않는다
+            apply(c, note, &[item], &[], "ai", now, now, &mut vec![])?;
+            assert_eq!(current_value(c, sid, "remark")?, "특별반 / OO중 전학 예정 (10월 12일 기록)");
+            let h = history(c, sid)?;
+            assert_eq!((h[0].field_label.as_str(), h[0].status.as_str()), ("비고", "applied"));
+            Ok(())
+        })
+        .unwrap();
     }
 
     #[test]

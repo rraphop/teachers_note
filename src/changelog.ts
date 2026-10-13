@@ -23,6 +23,17 @@ export interface ChangeEntry {
 
 export const CHANGELOG: ChangeEntry[] = [
   {
+    version: "1.0.1",
+    date: "2026-10-13",
+    fixes: [
+      "시험감독, 보강, 출장처럼 선생님 본인의 업무를 학생 관찰 기록으로 잘못 정리하던 문제를 고쳤습니다. 이제 교무 업무와 일정으로 정리됩니다.",
+      "학생자치회, 교직원 점심시간 같은 학교 일정이 학생부 자료로 들어가던 문제를 고쳤습니다. 일정표에만 표시됩니다.",
+      "일정 제목이 \"교직원 점심은\"처럼 어색하게 잘리던 문제를 고쳤습니다.",
+      "문장 가운데 있는 시각 앞에서 줄이 바뀌던 문제를 고쳤습니다.",
+    ],
+    features: ["전학 기록을 적으면 학생 명렬표 비고에 전학 예정이 적히고, 전출·전입 서류 처리 할 일이 자동으로 만들어집니다."],
+  },
+  {
     version: "1.0",
     date: "2026-10-07",
     summary: "생각나는 대로 적으면, 이 PC 안의 AI가 학생, 할 일, 일정, 교무 업무로 정리해 줍니다. 학생 정보는 PC 밖으로 나가지 않습니다.",
@@ -42,7 +53,9 @@ export const CHANGELOG: ChangeEntry[] = [
   },
 ];
 
+/** 화면에 쓰는 버전: 1.0 부터는 "1.0.1", 예전 0.x 는 "0.61" (그때 파일 이름과 같게) */
 export function displayVersion(semver: string): string {
   const [major = "0", minor = "0", patch = "0"] = semver.split(".");
-  return Number(patch) > 0 ? `${major}.${minor}${patch}` : `${major}.${minor}`;
+  if (Number(patch) === 0) return `${major}.${minor}`;
+  return Number(major) === 0 ? `${major}.${minor}${patch}` : `${major}.${minor}.${patch}`;
 }

@@ -277,7 +277,9 @@ fn title_and_memo(a: &Analysis, span: Span, r: &Resolved) -> (String, Option<Str
     let hc = a.clauses[hi].span;
     // AI가 절 일부만 짚었으면 그 부분을, 여러 절을 묶었으면 제목 절만 쓴다
     let title_span = if hc.contains(span.start) && span.end <= hc.end { span } else { hc };
-    let title = item_title(raw, title_span, r.date.as_ref().filter(|d| title_span.contains(d.start)), r.time.as_ref().filter(|t| title_span.contains(t.start)));
+    let time_in_title = r.time.as_ref().filter(|t| title_span.contains(t.start));
+    let title = item_title(raw, title_span, r.date.as_ref().filter(|d| title_span.contains(d.start)), time_in_title);
+    let title = tidy_event_title(&title, time_in_title.map(|t| &raw[t.start..t.end]));
     let memo: Vec<String> = (0..a.clauses.len())
         .filter(|&i| i != hi && Some(i) != when_only && plain(i))
         .map(|i| text::tidy(a.clauses[i].span.slice(raw)))
@@ -285,6 +287,28 @@ fn title_and_memo(a: &Analysis, span: Span, r: &Resolved) -> (String, Option<Str
         .collect();
     let memo = (!memo.is_empty()).then(|| text::truncate_chars(&memo.join(", "), 200));
     (title, memo)
+}
+
+/// 일정 제목 다듬기 (4차 2번): 조사와 군더더기를 빼고 핵심만.
+/// - "학생자치회 실시 (…)" → "학생자치회 (…)" ('실시·개최·진행·예정·있음'을 뺀다)
+/// - "교직원 점심은 12:20"처럼 시각이 '~은/는' 뒤에 오는 문장은 시각을 제목에 남긴다 → "교직원 점심 12:20"
+fn tidy_event_title(title: &str, time_text: Option<&str>) -> String {
+    static RE_FILLER: Lazy<Regex> =
+        Lazy::new(|| Regex::new(r"\s*(?:실시|개최|진행|있음|예정)(?:함|합니다|됨|됩니다|한다|된다)?(\s*\(|\s*$)").unwrap());
+    let mut t = RE_FILLER.replace(title, "${1}").trim().to_string();
+    if t.chars().filter(|c| c.is_alphanumeric()).count() < 2 {
+        t = title.trim().to_string();
+    }
+    let topic = (t.ends_with('은') || t.ends_with('는')) && t.chars().count() > 2;
+    if topic {
+        t.pop();
+        let t = t.trim_end().to_string();
+        return match time_text {
+            Some(tm) if !tm.trim().is_empty() => format!("{t} {}", tm.trim()),
+            _ => t,
+        };
+    }
+    t
 }
 
 /// 맨 앞의 날짜·시각 표현을 뗀다 (카드 제목·요약용: "10. 2. 11:00 한일국제교류 컨설팅" → "한일국제교류 컨설팅")
@@ -421,7 +445,9 @@ fn rule_plan_from(a: &Analysis, ctx: &Ctx) -> Plan {
         let attendance = idxs.iter().any(|&i| a.clauses[i].attendance.is_some());
         let hint = idxs.iter().find_map(|&i| a.clauses[i].area_hint);
         let all_tasks_or_events = idxs.iter().all(|&i| a.clause_is_task(i) || a.clause_is_event(i));
-        let group = idxs.iter().any(|&i| a.clauses[i].group_subject || a.clauses[i].in_class);
+        // 학생 없는 관찰은 "학생들", "○반 아이들"처럼 학생이 주어일 때만 (4차 공통 기준).
+        // 과목명·교시("3교시 영어")만 있는 문장은 학생부 자료로 보지 않는다.
+        let group = idxs.iter().any(|&i| a.clauses[i].group_subject);
         let r = resolve_when(a, *sent, false);
         if !students.is_empty() {
             if all_tasks_or_events && !attendance {
@@ -502,10 +528,23 @@ fn rule_plan_from(a: &Analysis, ctx: &Ctx) -> Plan {
         items.push(it);
     }
 
+    // 5-2) 선생님 본인 업무 (시험감독·보강·출장·연수 …): 등록한 담당업무와 맞지 않아도 교무 업무로 남긴다 (4차 1번)
+    if single_duty.is_none() {
+        for (si, sent) in a.sentences.iter().enumerate() {
+            let st = sent.slice(raw);
+            if !analysis::own_duty_word(st) || a.clauses.iter().any(|c| c.sentence == si && !c.duties.is_empty()) {
+                continue;
+            }
+            let r = resolve_when(a, *sent, false);
+            items.push(with_when(blank(ItemKind::Duty, text::tidy(st), ItemOrigin::Rule), &r));
+        }
+    }
+
     let _ = ctx;
     // 시간표 문장("월 3교시 2-1 국어", "내일 3교시 보강")은 시간표에 반영하므로 관찰·일정·할 일로 만들지 않는다
+    // (보강·교체는 선생님 업무이기도 해서 교무 업무 기록은 남긴다)
     let tt = crate::ttinput::find(a);
-    items.retain(|i| !crate::ttinput::covered_by(&tt, raw, &i.text));
+    items.retain(|i| i.kind == ItemKind::Duty || !crate::ttinput::covered_by(&tt, raw, &i.text));
     let mut plan = Plan { summary: extractive_summary(raw, a.today), items, guard_notes: class_mismatch_notes(a), unknown_names: vec![], profile: vec![], specials: vec![] };
     attach_profile(a, &mut plan);
     plan
@@ -537,6 +576,53 @@ fn attach_profile(a: &Analysis, plan: &mut Plan) {
         let drop = |items: &mut Vec<PlanItem>, kinds: &[ItemKind]| {
             items.retain(|i| !(kinds.contains(&i.kind) && locate(raw, &i.text).is_some_and(|sp| sp.overlaps(&span))));
         };
+        // 전학·전출·전입 (4차 3번): 학생 관찰이 아니라 교사가 처리할 일이다.
+        // 명렬표 비고에 이어 적고 "○○○ 전출(전입) 서류 처리" 할 일을 만든다. 학생부 자료·일정으로는 보내지 않는다.
+        if let Some(tr) = crate::profile::find_transfer(text) {
+            let who: Vec<PlanStudent> = if !studs.is_empty() {
+                studs.clone()
+            } else {
+                // 명렬표에 없는 전입생 ("이름 홍길동") → 학생 추가 제안 (저장할 때 '확인 필요' 학생으로 등록)
+                tr.name
+                    .iter()
+                    .filter(|n| analysis::plausible_full_name(n))
+                    .map(|n| PlanStudent { student_id: None, name: n.clone(), class_label: tr.class_label.clone(), number: None, candidates: vec![] })
+                    .collect()
+            };
+            drop(&mut plan.items, &[ItemKind::Student, ItemKind::Event]);
+            if who.len() == 1 {
+                let s = who[0].clone();
+                let r = task_when(resolve_when(a, span, true), a.today);
+                let when = r.date.as_ref().map(|d| d.date);
+                let remark = crate::profile::transfer_remark(&tr, &s.name, a.today, when);
+                plan.profile.push(crate::profile::ProfileItem { field: "remark".into(), value: remark, relation: String::new(), student: s.clone(), text: text::tidy(text) });
+                // 같은 문장에 할 일이 이미 있으면 그 할 일에 학생만 잇는다 ("금요일까지 전학 서류 보내기")
+                let what = if tr.incoming { "전입" } else { "전출" };
+                let title = format!("{} {what} 서류 처리", s.name);
+                let existing = plan
+                    .items
+                    .iter_mut()
+                    .find(|i| i.kind == ItemKind::Task && (i.text == title || locate(raw, &i.text).is_some_and(|sp| sp.overlaps(&span))));
+                match existing {
+                    Some(t) => push_student(&mut t.students, s),
+                    None => {
+                        let mut task = with_when(blank(ItemKind::Task, title, ItemOrigin::Rule), &r);
+                        task.students = vec![s];
+                        plan.items.push(task);
+                    }
+                }
+            } else {
+                let note = if who.is_empty() {
+                    "전학 기록에 학생 이름이 없어 학생 명렬표에 적지 못했습니다. \"2-1 홍길동 OO중 전학 예정\"처럼 이름을 함께 적어 주세요."
+                } else {
+                    "전학 기록에 학생이 여럿 적혀 누구의 것인지 정할 수 없어 학생 명렬표에 적지 않았습니다. 학생별로 나눠 적어 주세요."
+                };
+                if !plan.guard_notes.iter().any(|n| n == note) {
+                    plan.guard_notes.push(note.to_string());
+                }
+            }
+            continue;
+        }
         let hits = crate::profile::find_hits(text);
         if studs.len() != 1 {
             // 누구의 정보인지 하나로 정할 수 없으면 명렬표에 넣지 않는다. 그래도 학생부 자료로는 보내지 않는다.
@@ -782,13 +868,15 @@ pub fn guard_llm(raw: &str, out: &LlmOutput, ctx: &Ctx) -> Plan {
                     duty_id = None;
                 }
             }
-            if kind == ItemKind::Duty && duty_id.is_none() {
+            // 시험감독·보강·출장처럼 선생님 본인에게 배정된 일은 맞는 담당업무가 없어도 업무 기록으로 남긴다 (4차 1번)
+            if kind == ItemKind::Duty && duty_id.is_none() && !analysis::own_duty_word(sentence) {
                 notes.push(format!("\"{}\"와 맞는 담당업무가 없어 업무 기록으로 만들지 않았습니다.", text::truncate_chars(&t, 30)));
                 kind = ItemKind::Memo;
             }
         }
         if kind == ItemKind::Student && students.is_empty() {
-            let group = a.clauses.iter().any(|c| c.span.overlaps(&span) && (c.group_subject || c.in_class));
+            // 학생 없는 관찰은 "학생들"처럼 학생이 주어일 때만 (과목명·교시만으로는 학생부 자료가 아니다)
+            let group = a.clauses.iter().any(|c| c.span.overlaps(&span) && c.group_subject);
             if !group {
                 kind = ItemKind::Memo;
             }
@@ -927,7 +1015,13 @@ pub fn guard_llm(raw: &str, out: &LlmOutput, ctx: &Ctx) -> Plan {
                 }
             }
             ItemKind::Duty => {
-                if !items.iter().any(|i| i.kind == ItemKind::Duty) {
+                // 등록한 담당업무 기록은 AI가 업무를 하나도 안 냈을 때만, 본인 업무(시험감독 등)는 같은 문장이 없을 때 더한다
+                let missing = if ri.duty_id.is_some() {
+                    !items.iter().any(|i| i.kind == ItemKind::Duty)
+                } else {
+                    !covered(&items, &[ItemKind::Duty], &ri.text)
+                };
+                if missing {
                     items.push(ri.clone());
                 }
             }
@@ -1027,7 +1121,7 @@ pub fn guard_llm(raw: &str, out: &LlmOutput, ctx: &Ctx) -> Plan {
     // 8-2) 시간표 문장은 시간표에 반영하므로 AI 가 관찰·일정·할 일로 본 것을 뺀다
     let tt = crate::ttinput::find(&a);
     let before = merged.len();
-    merged.retain(|i| !crate::ttinput::covered_by(&tt, raw, &i.text));
+    merged.retain(|i| i.kind == ItemKind::Duty || !crate::ttinput::covered_by(&tt, raw, &i.text));
     if merged.len() < before {
         notes.push("시간표 문장은 학생 관찰·일정 대신 시간표에 반영했습니다.".to_string());
     }
@@ -1182,6 +1276,98 @@ mod tests {
             assert!(!p.items.iter().any(|i| i.text.contains("010-")), "학생부 자료로 보내지 않음: {:?}", p.items);
             assert!(p.guard_notes.iter().any(|n| n.contains("여러 학생")), "{:?}", p.guard_notes);
         }
+    }
+
+    // ── 4차 수정목록 (v1.0.1) ──
+    fn v101_roster() -> Vec<RosterEntry> {
+        let s = |id, name: &str, l: &str, n| RosterEntry { id, name: name.into(), class_label: Some(l.into()), number: Some(n) };
+        let c = |l: &str| RosterEntry { id: 0, name: String::new(), class_label: Some(l.into()), number: None };
+        // "전학생"은 예전 빌드가 기록에서 잘못 만든 학생 칸 (그 칸이 있어도 '학생'을 그 학생으로 보지 않아야 한다)
+        vec![s(1, "심청", "1-1", 1), s(2, "전우치", "1-1", 2), s(3, "흥부", "2-1", 1), s(9, "전학생", "2-1", 30), c("1-1"), c("2-1"), c("3-1")]
+    }
+
+    #[test]
+    fn own_duty_is_duty_not_student_record() {
+        let r = v101_roster();
+        let c = Ctx { today: today(), roster: &r, duties: &[] };
+        // 1) 시험감독: 교무 업무(+ 앞날짜면 일정), 학생부 없음
+        let raw = "10월 12일 3교시 영어 시험감독";
+        let out = llm(r#"{"summary":"시험감독","items":[{"kind":"student","text":"10월 12일 3교시 영어 시험감독","students":[],"area":"subject","duty":0,"date":"10월 12일"}]}"#);
+        for p in [rule_plan(raw, &c), guard_llm(raw, &out, &c)] {
+            assert!(kinds(&p, ItemKind::Student).is_empty(), "학생부 없음: {:?}", p.items);
+            let d = kinds(&p, ItemKind::Duty);
+            assert_eq!((d.len(), d[0].duty_id, d[0].date.as_deref()), (1, None, Some("2026-10-12")), "{:?}", p.items);
+            assert_eq!(kinds(&p, ItemKind::Event).len(), 1, "시각 전이면 일정도: {:?}", p.items);
+        }
+        // 2) 보강: 교무 업무, 학생부 없음 (그날 시간표 변경은 시간표가 맡는다)
+        let p = rule_plan("내일 2교시 2-1 보강", &c);
+        assert!(kinds(&p, ItemKind::Student).is_empty(), "{:?}", p.items);
+        assert_eq!(kinds(&p, ItemKind::Duty).len(), 1, "{:?}", p.items);
+        // 3) 시험감독 중 학생들 모습: 교무 업무 + 학생 미지정 관찰
+        let p = rule_plan("3교시 영어 시험감독 중 2-1 학생들 대부분 끝까지 집중함", &c);
+        assert_eq!(kinds(&p, ItemKind::Duty).len(), 1, "{:?}", p.items);
+        let o = kinds(&p, ItemKind::Student);
+        assert_eq!((o.len(), o[0].students.len()), (1, 0), "{:?}", p.items);
+        // 4) 학생이 주어: 그 학생의 학생부 참고자료
+        let p = rule_plan("3교시 1-1 심청 영어 시험 중 졸음", &c);
+        let o = kinds(&p, ItemKind::Student);
+        assert_eq!(o.len(), 1, "{:?}", p.items);
+        assert_eq!(o[0].students[0].student_id, Some(1));
+        assert!(kinds(&p, ItemKind::Duty).is_empty(), "{:?}", p.items);
+    }
+
+    #[test]
+    fn school_event_is_event_only_with_tidy_title() {
+        let r = v101_roster();
+        let c = Ctx { today: today(), roster: &r, duties: &[] };
+        let raw = "10.14. 15:15 학생자치회 실시 (학생생활협약 조성방안 논의)";
+        let out = llm(r#"{"summary":"학생자치회","items":[{"kind":"event","text":"10.14. 15:15 학생자치회 실시 (학생생활협약 조성방안 논의)","students":[],"area":"none","duty":0,"date":"10.14."},{"kind":"student","text":"학생자치회 실시 (학생생활협약 조성방안 논의)","students":["전학생"],"area":"autonomy","duty":0,"date":""}]}"#);
+        for p in [rule_plan(raw, &c), guard_llm(raw, &out, &c)] {
+            assert!(kinds(&p, ItemKind::Student).is_empty(), "학생부 없음: {:?}", p.items);
+            assert!(kinds(&p, ItemKind::Duty).is_empty(), "{:?}", p.items);
+            let e = kinds(&p, ItemKind::Event);
+            assert_eq!(e.len(), 1, "{:?}", p.items);
+            assert_eq!((e[0].text.as_str(), e[0].date.as_deref(), e[0].time.as_deref()), ("학생자치회 (학생생활협약 조성방안 논의)", Some("2026-10-14"), Some("15:15")));
+        }
+        let p = rule_plan("오늘 교직원 점심은 12:20", &c);
+        assert!(kinds(&p, ItemKind::Student).is_empty() && kinds(&p, ItemKind::Duty).is_empty(), "{:?}", p.items);
+        let e = kinds(&p, ItemKind::Event);
+        assert_eq!((e.len(), e[0].text.as_str()), (1, "교직원 점심 12:20"), "{:?}", p.items);
+        // 내 담당업무와 관련된 학교 일정은 일정 + 교무 업무
+        let duties = vec![DutyEntry { id: 7, name: "교무부장".into(), detail: "학사 운영".into(), guide: String::new(), keywords: vec![] }];
+        let c2 = Ctx { today: today(), roster: &r, duties: &duties };
+        let p = rule_plan("교무부장 회의 10.15. 14:00", &c2);
+        assert_eq!(kinds(&p, ItemKind::Event).len(), 1, "{:?}", p.items);
+        assert_eq!(kinds(&p, ItemKind::Duty).first().and_then(|d| d.duty_id), Some(7), "{:?}", p.items);
+    }
+
+    #[test]
+    fn transfer_goes_to_remark_and_task() {
+        let r = v101_roster();
+        let c = Ctx { today: today(), roster: &r, duties: &[] };
+        // 전출 예정: 비고 + 할 일, 학생 기록 없음
+        let raw = "1-1 심청 OO중 전학예정";
+        let out = llm(r#"{"summary":"전학","items":[{"kind":"student","text":"1-1 심청 OO중 전학예정","students":["1-1 심청"],"area":"none","duty":0,"date":""}]}"#);
+        for p in [rule_plan(raw, &c), guard_llm(raw, &out, &c)] {
+            assert!(kinds(&p, ItemKind::Student).is_empty(), "{:?}", p.items);
+            let pr: Vec<_> = p.profile.iter().map(|i| (i.field.as_str(), i.value.as_str(), i.student.student_id)).collect();
+            assert_eq!(pr, vec![("remark", "OO중 전학 예정 (9월 29일 기록)", Some(1))]);
+            let t = kinds(&p, ItemKind::Task);
+            assert_eq!((t.len(), t[0].text.as_str(), t[0].date.as_deref()), (1, "심청 전출 서류 처리", None), "{:?}", p.items);
+            assert_eq!(t[0].students[0].student_id, Some(1));
+        }
+        // 날짜가 있으면 할 일 마감
+        let p = rule_plan("1-1 전우치 10월 20일 광주로 전학", &c);
+        assert_eq!(p.profile[0].value, "광주 전학 예정, 10월 20일 (9월 29일 기록)");
+        let t = kinds(&p, ItemKind::Task);
+        assert_eq!((t[0].text.as_str(), t[0].date.as_deref()), ("전우치 전출 서류 처리", Some("2026-10-20")));
+        // 명렬표에 없는 전입생: 학생 추가 제안 + 비고 + 전입 서류 처리
+        let p = rule_plan("3학년에 OO중에서 전입생 옴, 이름 홍길동", &c);
+        assert!(kinds(&p, ItemKind::Student).is_empty(), "{:?}", p.items);
+        assert_eq!((p.profile[0].student.name.as_str(), p.profile[0].student.student_id, p.profile[0].value.as_str()), ("홍길동", None, "OO중에서 전입 (9월 29일 기록)"));
+        assert_eq!(kinds(&p, ItemKind::Task)[0].text, "홍길동 전입 서류 처리");
+        // "전학년"(모든 학년)은 학적 변동이 아니다
+        assert!(crate::profile::find_transfer("전학년 대상 설문 실시").is_none());
     }
 
     #[test]

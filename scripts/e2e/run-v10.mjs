@@ -92,7 +92,7 @@ async function open(dataRootDir) {
 let { child, app } = await open(dataRoot);
 try {
   const info = await app.invoke("app_info");
-  check("버전 1.0", info.version === "1.0.0", info.version);
+  check("버전 1.0.x", /^1\.0\.\d+$/.test(info.version), info.version);
 
   // ── 준비: 할 일·일정 ──
   await app.invoke("create_task", { input: { title: "수행평가 채점", due_date: plus(0) } });

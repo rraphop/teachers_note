@@ -160,8 +160,13 @@ fn parse_ver(s: &str) -> Option<Ver> {
 }
 
 /// 화면에 쓰는 버전: "0.6.1" → "0.61", "0.6.0" → "0.6"
+/// 화면에 쓰는 버전: 1.0 부터는 "1.0.1", 예전 0.x 는 파일 이름처럼 "0.61"
 fn display_ver(v: Ver) -> String {
-    if v.2 == 0 { format!("{}.{}", v.0, v.1) } else { format!("{}.{}{}", v.0, v.1, v.2) }
+    match v {
+        (_, _, 0) => format!("{}.{}", v.0, v.1),
+        (0, _, _) => format!("{}.{}{}", v.0, v.1, v.2),
+        _ => format!("{}.{}.{}", v.0, v.1, v.2),
+    }
 }
 
 /// 파일 이름 "교무수첩_1.0.0.exe" (안내 문구에도 이 이름을 쓴다)
@@ -478,6 +483,7 @@ mod tests {
         assert_eq!(display_ver((0, 6, 1)), "0.61");
         assert_eq!(display_ver((0, 6, 0)), "0.6");
         assert_eq!(display_ver((1, 0, 0)), "1.0");
+        assert_eq!(display_ver((1, 0, 1)), "1.0.1");
         // 지금 이름
         assert_eq!(file_name((1, 0, 0)), "교무수첩_1.0.0.exe");
         assert_eq!(file_ver("교무수첩_1.0.0.exe"), Some(((1, 0, 0), false)));

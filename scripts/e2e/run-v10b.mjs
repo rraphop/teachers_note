@@ -32,7 +32,7 @@ try {
   app = await connect(9333);
   await waitFor(() => app.evaluate(`!!document.querySelector('.capture textarea')`), { label: "첫 화면" });
   const info = await app.invoke("app_info");
-  check("버전 1.0.0 그대로", info.version === "1.0.0", info.version);
+  check("버전 1.0.x", /^1\.0\.\d+$/.test(info.version), info.version);
 
   // ── 준비: 가짜 학생 (1-1 셋, 1-2 둘, 2-1 둘), 담임반 1-2 ──
   const roster = [
