@@ -484,6 +484,16 @@ button:focus-visible {
   font-size: 0.9rem;
   margin: 0 0 14px;
 }
+/* 설정 > 데이터: 두 번째 백업 위치 */
+.mirror-box {
+  margin: 14px 0 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.mirror-box h3 {
+  margin: 0 0 4px;
+}
 /* 기록 화면: 기록 안에서 찾기 */
 .notes-search {
   display: flex;

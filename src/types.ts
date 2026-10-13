@@ -832,6 +832,8 @@ export interface AppSettings {
   threads: number | null;
   /** AI 계산 장치: auto(그래픽카드가 있으면 GPU) | cpu */
   ai_device: "auto" | "cpu";
+  /** 두 번째 백업 위치 (set_backup_mirror 로만 바꾼다) */
+  backup_mirror_dir?: string | null;
   onboarding_done: boolean;
   roster_columns: RosterColumns;
   birthdays_on_calendar: boolean;
@@ -965,6 +967,19 @@ export interface BackupFile {
   taken_at: string;
   /** auto | manual | before-restore (같은 초에 두 번이면 manual_2 처럼 붙음) */
   kind: string;
+  /** main(기본 백업 폴더) | mirror(두 번째 백업 위치에만 있음) */
+  location: "main" | "mirror";
+}
+
+/** 두 번째 백업 위치 (다른 드라이브·폴더) */
+export interface MirrorStatus {
+  dir: string | null;
+  folder: string | null;
+  available: boolean;
+  same_drive: boolean;
+  count: number;
+  last_ok: string | null;
+  last_error: string | null;
 }
 
 export interface BackupCounts {

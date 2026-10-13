@@ -1133,6 +1133,8 @@ pub async fn update_settings(state: S<'_>, value: AppSettings) -> AppResult<AppS
         next.selected_model = cur.selected_model.clone();
         next.always_on_top = cur.always_on_top;
         next.window_transparency = cur.window_transparency;
+        // 두 번째 백업 위치는 set_backup_mirror 로만 (폴더 검사를 거친다)
+        next.backup_mirror_dir = cur.backup_mirror_dir.clone();
         settings::save(c, &next)?;
         let saved = settings::load(c)?;
         let now = util::now();
@@ -1343,6 +1345,14 @@ pub async fn open_folder(app: AppHandle, state: S<'_>, which: String) -> AppResu
         "models" => state.paths.models_dir.clone(),
         "backups" => state.paths.backups_dir.clone(),
         "logs" => state.paths.logs_dir.clone(),
+        "mirror" => {
+            let dir = state.db.with(|c| Ok(crate::settings::load(c)?.backup_mirror_dir))?.ok_or_else(|| AppError::invalid("두 번째 백업 위치를 아직 정하지 않았습니다."))?;
+            let p = crate::backup::mirror_folder(std::path::Path::new(&dir));
+            if !p.is_dir() {
+                return Err(AppError::invalid("두 번째 백업 위치를 찾지 못했습니다. 그 드라이브가 연결돼 있는지 확인해 주세요."));
+            }
+            p
+        }
         "licenses" => {
             let p = crate::paths::exe_dir().join("licenses");
             if !p.is_dir() {
@@ -1368,9 +1378,97 @@ pub async fn license_texts() -> AppResult<LicenseTexts> {
     Ok(LicenseTexts { license: include_str!("../../LICENSE.txt"), notices: include_str!("../../THIRD_PARTY_NOTICES.txt") })
 }
 
+/// 기본 백업 + 두 번째 위치에만 있는 백업 (C 드라이브가 초기화돼 기본 백업이 없어진 경우 그쪽으로 되돌린다)
 #[tauri::command]
 pub async fn list_backups(state: S<'_>) -> AppResult<Vec<crate::backup::BackupFile>> {
-    Ok(crate::backup::list(&state.paths.backups_dir))
+    let mut v = crate::backup::list(&state.paths.backups_dir);
+    if let Some(dir) = state.db.with(|c| Ok(crate::settings::load(c)?.backup_mirror_dir))? {
+        v.extend(crate::backup::list_mirror_only(&state.paths.backups_dir, std::path::Path::new(&dir)));
+        v.sort_by(|a, b| b.name.cmp(&a.name));
+    }
+    Ok(v)
+}
+
+#[derive(Serialize)]
+pub struct MirrorStatus {
+    /// 고른 폴더 (없으면 쓰지 않음)
+    pub dir: Option<String>,
+    /// 실제로 백업이 들어가는 폴더 (고른 폴더 안의 teachers_note_backups)
+    pub folder: Option<String>,
+    /// 그 폴더가 지금 있는지 (드라이브·USB 연결)
+    pub available: bool,
+    /// 데이터와 같은 드라이브인지 (드라이브가 고장 나거나 초기화되면 함께 사라진다)
+    pub same_drive: bool,
+    /// 두 번째 위치에 있는 백업 수
+    pub count: usize,
+    pub last_ok: Option<String>,
+    pub last_error: Option<String>,
+}
+
+fn mirror_status(state: &AppState) -> AppResult<MirrorStatus> {
+    let dir = state.db.with(|c| Ok(crate::settings::load(c)?.backup_mirror_dir))?;
+    let (last_ok, last_error) = crate::backup::MIRROR_LAST.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    Ok(match dir {
+        None => MirrorStatus { dir: None, folder: None, available: false, same_drive: false, count: 0, last_ok: None, last_error: None },
+        Some(d) => {
+            let root = std::path::Path::new(&d);
+            let folder = crate::backup::mirror_folder(root);
+            MirrorStatus {
+                available: root.is_dir(),
+                same_drive: crate::backup::same_drive(&state.paths.root, root),
+                count: crate::backup::list(&folder).len(),
+                folder: Some(folder.display().to_string()),
+                dir: Some(d),
+                last_ok,
+                last_error,
+            }
+        }
+    })
+}
+
+#[tauri::command]
+pub async fn backup_mirror_status(state: S<'_>) -> AppResult<MirrorStatus> {
+    mirror_status(state.inner())
+}
+
+/// 두 번째 백업 위치 정하기 (None = 그만 쓰기, 이미 복사한 파일은 지우지 않는다).
+/// 정하면 바로 지금까지의 백업을 그곳에 복사한다 (백업이 하나도 없으면 먼저 하나 만든다).
+#[tauri::command]
+pub async fn set_backup_mirror(state: S<'_>, dir: Option<String>) -> AppResult<MirrorStatus> {
+    let st = state.inner().clone();
+    blocking(move || {
+        let dir = dir.map(|d| d.trim().to_string()).filter(|d| !d.is_empty());
+        if let Some(d) = &dir {
+            let root = std::path::Path::new(d);
+            if !root.is_absolute() || !root.is_dir() {
+                return Err(AppError::invalid("있는 폴더를 골라 주세요."));
+            }
+            if root.starts_with(&st.paths.root) {
+                return Err(AppError::invalid("교무수첩 데이터 폴더 안은 고를 수 없습니다. 다른 드라이브나 폴더를 골라 주세요."));
+            }
+            // 쓸 수 있는 곳인지 확인
+            let folder = crate::backup::mirror_folder(root);
+            std::fs::create_dir_all(&folder).map_err(|e| AppError::invalid(format!("그 폴더에 쓸 수 없습니다: {e}")))?;
+            let probe = folder.join("write-test.tmp");
+            std::fs::write(&probe, b"ok").map_err(|e| AppError::invalid(format!("그 폴더에 쓸 수 없습니다: {e}")))?;
+            let _ = std::fs::remove_file(&probe);
+        }
+        st.db.with(|c| {
+            let mut s = crate::settings::load(c)?;
+            s.backup_mirror_dir = dir.clone();
+            crate::settings::save(c, &s)
+        })?;
+        *crate::backup::MIRROR_LAST.lock().unwrap_or_else(|e| e.into_inner()) = (None, None);
+        if dir.is_some() {
+            if crate::backup::list(&st.paths.backups_dir).is_empty() && st.db.with(|c| crate::backup::has_user_data(c))? {
+                app::backup_now(&st, "manual")?;
+            } else {
+                app::mirror_backups(&st);
+            }
+        }
+        mirror_status(&st)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -1382,16 +1480,33 @@ pub async fn backup_now(state: S<'_>) -> AppResult<String> {
 
 /// 되돌리기 확인 창에 보여 줄 백업 내용 (사본으로 검사)
 #[tauri::command]
-pub async fn inspect_backup(state: S<'_>, name: String) -> AppResult<crate::backup::BackupCounts> {
+pub async fn inspect_backup(state: S<'_>, name: String, location: Option<String>) -> AppResult<crate::backup::BackupCounts> {
     let st = state.inner().clone();
-    blocking(move || crate::backup::inspect(&st.paths, &name)).await
+    blocking(move || {
+        bring_mirror_backup(&st, &name, location.as_deref())?;
+        crate::backup::inspect(&st.paths, &name)
+    })
+    .await
+}
+
+/// 두 번째 위치에만 있는 백업이면 기본 백업 폴더로 가져온다 (그다음은 보통 되돌리기와 같다)
+fn bring_mirror_backup(st: &AppState, name: &str, location: Option<&str>) -> AppResult<()> {
+    if location != Some("mirror") {
+        return Ok(());
+    }
+    let dir = st.db.with(|c| Ok(crate::settings::load(c)?.backup_mirror_dir))?.ok_or_else(|| AppError::invalid("두 번째 백업 위치를 아직 정하지 않았습니다."))?;
+    crate::backup::import_from_mirror(&st.paths, std::path::Path::new(&dir), name)
 }
 
 /// 백업 되돌리기 예약. 화면은 이어서 restart_app 을 부른다.
 #[tauri::command]
-pub async fn request_restore(state: S<'_>, name: String) -> AppResult<crate::backup::BackupCounts> {
+pub async fn request_restore(state: S<'_>, name: String, location: Option<String>) -> AppResult<crate::backup::BackupCounts> {
     let st = state.inner().clone();
-    blocking(move || crate::backup::request(&st.paths, &name)).await
+    blocking(move || {
+        bring_mirror_backup(&st, &name, location.as_deref())?;
+        crate::backup::request(&st.paths, &name)
+    })
+    .await
 }
 
 /// 이번 시작 때 되돌리기를 했으면 그 결과 (한 번만 돌려준다)

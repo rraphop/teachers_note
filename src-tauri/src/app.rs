@@ -298,7 +298,23 @@ pub fn fire_due_reminders(state: &AppState, now: chrono::NaiveDateTime) -> AppRe
 }
 
 pub fn backup_now(state: &AppState, label: &str) -> AppResult<std::path::PathBuf> {
-    state.db.with(|c| crate::backup::backup_with(c, &state.paths.backups_dir, label))
+    let p = state.db.with(|c| crate::backup::backup_with(c, &state.paths.backups_dir, label))?;
+    mirror_backups(state);
+    Ok(p)
+}
+
+/// 두 번째 백업 위치가 정해져 있으면 그곳에도 사본을 맞춘다 (실패해도 기본 백업은 그대로, 결과는 설정 화면에 보인다)
+pub fn mirror_backups(state: &AppState) {
+    let Ok(Some(dir)) = state.db.with(|c| Ok(crate::settings::load(c)?.backup_mirror_dir)) else { return };
+    let res = crate::backup::sync_mirror(&state.paths.backups_dir, std::path::Path::new(&dir));
+    let mut last = crate::backup::MIRROR_LAST.lock().unwrap_or_else(|e| e.into_inner());
+    match res {
+        Ok(_) => *last = (Some(util::fmt_dt(util::now())), None),
+        Err(e) => {
+            crate::logging::warn(&format!("두 번째 백업 위치에 복사하지 못했습니다: {e}"));
+            last.1 = Some(e.to_string());
+        }
+    }
 }
 
 /// 하루 한 번 자동 백업하고 최근 14개만 남긴다
@@ -310,19 +326,22 @@ pub fn daily_backup(state: &AppState) -> AppResult<()> {
         .filter(|p| p.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.starts_with("notebook-") && n.ends_with("-auto.db")))
         .collect();
     if autos.iter().any(|p| p.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.starts_with(&format!("notebook-{today}")))) {
+        // 오늘 백업은 이미 있다. 두 번째 위치가 어제 연결돼 있지 않았으면 지금 맞춘다
+        mirror_backups(state);
         return Ok(());
     }
     // 기록이 없어도 명렬표·시간표·일정만 있으면 백업한다
     if !state.db.with(|c| crate::backup::has_user_data(c))? {
         return Ok(());
     }
-    let p = backup_now(state, "auto")?;
+    let p = state.db.with(|c| crate::backup::backup_with(c, &state.paths.backups_dir, "auto"))?;
     autos.push(p);
     autos.sort();
     while autos.len() > 14 {
         let old = autos.remove(0);
         let _ = std::fs::remove_file(old);
     }
+    mirror_backups(state);
     Ok(())
 }
 

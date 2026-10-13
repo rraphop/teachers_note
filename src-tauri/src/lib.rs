@@ -511,6 +511,8 @@ pub fn run() {
             commands::test_notification,
             commands::open_folder,
             commands::list_backups,
+            commands::backup_mirror_status,
+            commands::set_backup_mirror,
             commands::backup_now,
             commands::inspect_backup,
             commands::request_restore,

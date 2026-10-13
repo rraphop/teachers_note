@@ -25,6 +25,8 @@ pub struct BackupFile {
     pub taken_at: String,
     /// auto | manual | before-restore
     pub kind: String,
+    /// main(기본 백업 폴더) | mirror(두 번째 백업 위치에만 있음)
+    pub location: String,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -82,11 +84,94 @@ pub fn list(backups_dir: &Path) -> Vec<BackupFile> {
             }
             let size = e.metadata().map(|m| m.len()).unwrap_or(0);
             let (taken_at, kind) = parse_name(&name);
-            out.push(BackupFile { name, size, taken_at, kind });
+            out.push(BackupFile { name, size, taken_at, kind, location: "main".into() });
         }
     }
     out.sort_by(|a, b| b.name.cmp(&a.name));
     out
+}
+
+// ───────────── 두 번째 백업 위치 (1.0.1) ─────────────
+// 학교 PC는 드라이브가 나뉘어 있고 C 드라이브가 초기화되기도 한다. 다른 드라이브·폴더에 사본을 둔다.
+
+/// 두 번째 위치 안에 만드는 폴더 이름
+pub const MIRROR_SUBDIR: &str = "teachers_note_backups";
+
+pub fn mirror_folder(root: &Path) -> PathBuf {
+    root.join(MIRROR_SUBDIR)
+}
+
+/// 마지막으로 두 번째 위치에 복사한 결과 (시각, 오류)
+pub static MIRROR_LAST: Mutex<(Option<String>, Option<String>)> = Mutex::new((None, None));
+
+/// 기본 백업 폴더의 백업을 두 번째 위치로 맞춘다: 없는 파일만 복사하고, 자동 백업은 최근 14개만 남긴다.
+pub fn sync_mirror(backups_dir: &Path, root: &Path) -> AppResult<usize> {
+    if !root.is_dir() {
+        return Err(AppError::msg("두 번째 백업 위치를 찾지 못했습니다. 그 드라이브(또는 USB)가 연결돼 있는지 확인해 주세요."));
+    }
+    let dst = mirror_folder(root);
+    std::fs::create_dir_all(&dst)?;
+    let mut copied = 0;
+    let main = list(backups_dir); // 최근 것부터
+    // 자동 백업은 최근 14개만 옮긴다 (오래된 것을 옮겼다 지웠다 하지 않게)
+    let keep_autos: Vec<&str> = main.iter().filter(|b| b.kind.starts_with("auto")).take(14).map(|b| b.name.as_str()).collect();
+    for b in &main {
+        let to = dst.join(&b.name);
+        if to.exists() || (b.kind.starts_with("auto") && !keep_autos.contains(&b.name.as_str())) {
+            continue;
+        }
+        // 복사 중에 끊겨도 반쪽 파일이 백업으로 보이지 않게 다른 이름으로 받은 뒤 바꾼다
+        let part = dst.join(format!("{}.part", b.name));
+        std::fs::copy(backups_dir.join(&b.name), &part)?;
+        std::fs::rename(&part, &to)?;
+        copied += 1;
+    }
+    let mut autos: Vec<String> = list(&dst).into_iter().filter(|b| b.kind.starts_with("auto")).map(|b| b.name).collect();
+    autos.sort();
+    while autos.len() > 14 {
+        let old = autos.remove(0);
+        let _ = std::fs::remove_file(dst.join(old));
+    }
+    Ok(copied)
+}
+
+/// 두 번째 위치에만 있는 백업 (기본 백업 폴더에 같은 이름이 없는 것)
+pub fn list_mirror_only(backups_dir: &Path, root: &Path) -> Vec<BackupFile> {
+    let main: Vec<String> = list(backups_dir).into_iter().map(|b| b.name).collect();
+    list(&mirror_folder(root))
+        .into_iter()
+        .filter(|b| !main.contains(&b.name))
+        .map(|mut b| {
+            b.location = "mirror".into();
+            b
+        })
+        .collect()
+}
+
+/// 두 번째 위치의 백업을 기본 백업 폴더로 가져온다 (그 뒤로는 보통 백업처럼 검사·되돌리기)
+pub fn import_from_mirror(paths: &AppPaths, root: &Path, name: &str) -> AppResult<()> {
+    if !valid_name(name) {
+        return Err(AppError::invalid("백업 파일 이름이 올바르지 않습니다."));
+    }
+    let src = mirror_folder(root).join(name);
+    if !src.is_file() {
+        return Err(AppError::not_found("두 번째 백업 위치에서 백업 파일을 찾지 못했습니다."));
+    }
+    std::fs::create_dir_all(&paths.backups_dir)?;
+    let to = paths.backups_dir.join(name);
+    if !to.exists() {
+        std::fs::copy(&src, &to)?;
+    }
+    Ok(())
+}
+
+/// 데이터 폴더와 같은 드라이브인지 ("C:\…" 와 "C:\…")
+pub fn same_drive(a: &Path, b: &Path) -> bool {
+    let drive = |p: &Path| match p.components().next() {
+        Some(std::path::Component::Prefix(x)) => Some(x.as_os_str().to_string_lossy().to_ascii_lowercase()),
+        _ => None,
+    };
+    matches!((drive(a), drive(b)), (Some(x), Some(y)) if x == y)
 }
 
 /// 열린 연결로 백업 (실행 중 자동·수동 백업)
@@ -342,6 +427,39 @@ mod tests {
         let (t, k) = parse_name("notebook-20260930-153012-before-restore.db");
         assert_eq!(t, "2026-09-30 15:30");
         assert_eq!(k, "before-restore");
+    }
+
+    #[test]
+    fn mirror_copies_missing_and_keeps_14_autos() {
+        let tmp = std::env::temp_dir().join(format!("tn-mirror-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        let main = tmp.join("backups");
+        let second = tmp.join("D-drive");
+        std::fs::create_dir_all(&main).unwrap();
+        std::fs::create_dir_all(&second).unwrap();
+        for d in 1..=16 {
+            std::fs::write(main.join(format!("notebook-202610{d:02}-080000-auto.db")), b"x").unwrap();
+        }
+        std::fs::write(main.join("notebook-20261001-120000-manual.db"), b"m").unwrap();
+        std::fs::write(main.join("메모.txt"), b"not a backup").unwrap();
+        assert_eq!(sync_mirror(&main, &second).unwrap(), 15, "자동 14개 + 직접 1개");
+        let got = list(&mirror_folder(&second));
+        assert_eq!(got.iter().filter(|b| b.kind == "auto").count(), 14, "자동 백업은 최근 14개");
+        assert!(got.iter().any(|b| b.kind == "manual"), "직접 만든 백업은 남긴다");
+        assert!(!mirror_folder(&second).join("메모.txt").exists());
+        // 두 번째에는 없는 것만 더한다
+        std::fs::write(main.join("notebook-20261017-080000-auto.db"), b"x").unwrap();
+        assert_eq!(sync_mirror(&main, &second).unwrap(), 1);
+        // 기본 백업이 사라져도(드라이브 초기화) 두 번째 위치의 백업이 목록에 나오고 가져올 수 있다
+        let gone = "notebook-20261017-080000-auto.db";
+        std::fs::remove_file(main.join(gone)).unwrap();
+        let only = list_mirror_only(&main, &second);
+        assert!(only.iter().any(|b| b.name == gone && b.location == "mirror"), "{only:?}");
+        // 드라이브가 없으면 오류 (기본 백업은 그대로)
+        assert!(sync_mirror(&main, &tmp.join("E-drive-unplugged")).is_err());
+        assert!(same_drive(Path::new(r"C:\Users\t\AppData\Local\teachers_note"), Path::new(r"c:\백업")));
+        assert!(!same_drive(Path::new(r"C:\Users\t\AppData\Local\teachers_note"), Path::new(r"D:\백업")));
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 
     #[test]

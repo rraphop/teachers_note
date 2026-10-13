@@ -78,6 +78,41 @@ try {
   check("‘점심은 12:20’ 한 줄로 표시", lines === 0 && rawText.trim() === "오늘 교직원 점심은 12:20", `${lines} · ${rawText}`);
   await app.screenshot(path.join(shots, "01-notes.png"));
 
+  // ── 4-2. 두 번째 백업 위치 (다른 드라이브·폴더) ──
+  const second = path.join(path.dirname(dataRoot), path.basename(dataRoot) + "-second-drive");
+  await fs.rm(second, { recursive: true, force: true });
+  await fs.mkdir(second, { recursive: true });
+  await app.nav("설정");
+  await waitFor(() => app.evaluate(`!!document.querySelector('[data-testid=backup-mirror]')`), { label: "두 번째 백업 칸" });
+  await app.evaluate(`window.__tnTestPickPath = ${JSON.stringify(second)}; document.querySelector('[data-testid=backup-mirror]').scrollIntoView(); true`);
+  await app.click("폴더 고르기", "[data-testid=backup-mirror] button");
+  const mst = await waitFor(async () => {
+    const s = await app.invoke("backup_mirror_status");
+    return s.dir && s.count >= 1 ? s : null;
+  }, { label: "두 번째 위치 복사" });
+  const inSecond = async () => (await fs.readdir(path.join(second, "teachers_note_backups"))).filter((f) => f.startsWith("notebook-") && f.endsWith(".db"));
+  check("폴더 고르기 → 그 폴더\\teachers_note_backups 에 백업 사본", (await inSecond()).length >= 1 && mst.available, JSON.stringify(mst));
+  await sleep(500);
+  const box = await app.text("[data-testid=backup-mirror]");
+  check("설정 화면에 위치·개수, 같은 드라이브면 안내", box.includes("teachers_note_backups") && box.includes("같은 드라이브"), box.replace(/\n/g, " ").slice(0, 160));
+  await app.screenshot(path.join(shots, "03-backup-mirror.png"));
+  const before = (await inSecond()).length;
+  await app.click("지금 백업", ".row button");
+  await waitFor(async () => ((await inSecond()).length > before ? true : null), { label: "지금 백업 → 두 번째 위치" });
+  check("[지금 백업] → 두 번째 위치에도 저장", (await inSecond()).length === before + 1, `${before} → ${(await inSecond()).length}`);
+  // 다른 설정을 바꿔도 두 번째 위치는 그대로 (예전 화면 값으로 덮어쓰지 않음)
+  const cur = await app.invoke("get_settings");
+  await app.invoke("update_settings", { value: { ...cur, backup_mirror_dir: null, idle_unload_minutes: 20 } });
+  check("다른 설정 저장이 두 번째 위치를 지우지 않음", (await app.invoke("backup_mirror_status")).dir === second, "");
+  // 기본 백업이 사라져도(C 드라이브 초기화) 두 번째 위치의 백업으로 되돌릴 수 있다
+  const mainDir = path.join(dataRoot, "backups");
+  for (const f of (await fs.readdir(mainDir)).filter((f) => f.startsWith("notebook-"))) await fs.rm(path.join(mainDir, f), { force: true });
+  const list = await app.invoke("list_backups");
+  const mirrorOnly = list.filter((b) => b.location === "mirror");
+  check("기본 백업이 없으면 두 번째 위치 백업이 목록에", mirrorOnly.length >= 2, JSON.stringify(list.map((b) => [b.kind, b.location])));
+  const counts = await app.invoke("inspect_backup", { name: mirrorOnly[0].name, location: "mirror" });
+  check("두 번째 위치 백업 검사(되돌리기 확인 창)", counts.notes >= 1 && counts.students >= 1, JSON.stringify(counts));
+
   // ── 5. 버전 ──
   const info = await app.invoke("app_info");
   check("버전 1.0.1", info.version === "1.0.1", info.version);
@@ -87,8 +122,8 @@ try {
   await waitFor(() => app.evaluate(`!!document.querySelector('.dialog .changelog')`), { label: "업데이트 기록" });
   const first = await app.text(".changelog > li:first-child");
   check("업데이트 기록 맨 위 v1.0.1 (고친 점·새 기능)", first.includes("v1.0.1") && first.includes("고친 점") && first.includes("새 기능") && first.includes("전학"), first.slice(0, 80));
-  const second = await app.text(".changelog > li:nth-child(2)");
-  check("v1.0 기능 소개는 그대로", second.includes("v1.0") && second.includes("학생 명렬표"), second.slice(0, 40));
+  const secondEntry = await app.text(".changelog > li:nth-child(2)");
+  check("v1.0 기능 소개는 그대로", secondEntry.includes("v1.0") && secondEntry.includes("학생 명렬표"), secondEntry.slice(0, 40));
   await app.screenshot(path.join(shots, "02-changelog.png"));
 } catch (e) {
   check("E2E 실행", false, e instanceof Error ? e.stack ?? e.message : String(e));

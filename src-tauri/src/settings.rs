@@ -51,6 +51,8 @@ pub struct AppSettings {
     pub day_colors: DayColors,
     /// 학사력 종류 규칙 (나이스 구분값이 없을 때 행사 이름으로 정한다)
     pub day_rules: DayRules,
+    /// 두 번째 백업 위치 (다른 드라이브·폴더). 백업할 때마다 여기에도 사본을 둔다 (set_backup_mirror 로만 바꾼다)
+    pub backup_mirror_dir: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -131,6 +133,7 @@ impl Default for AppSettings {
             my_classes_off: vec![],
             day_colors: DayColors::default(),
             day_rules: DayRules::default(),
+            backup_mirror_dir: None,
         }
     }
 }

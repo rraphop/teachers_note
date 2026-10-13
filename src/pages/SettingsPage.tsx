@@ -4,13 +4,13 @@ import { useEffect, useState } from "react";
 import { api, errorText } from "../api";
 import { ErrorBox, ReminderPicker } from "../components/Fields";
 import { IconDownload, IconFolder, IconRefresh, IconShield, IconTrash } from "../components/Icons";
-import { ExportPanel } from "../components/ExportTools";
+import { ExportPanel, pickFolder } from "../components/ExportTools";
 import { YearPanel } from "../components/YearTools";
 import { SchoolPanel } from "../components/SchoolSettings";
 import { confirmDialog, Modal } from "../components/Modal";
 import { bytes, fmtDateTime, gib, percent } from "../lib/format";
 import { useLoad, useStore } from "../lib/store";
-import type { AppSettings, BackupCounts, BackupFile, CatalogEntry, DeviceInfo, DlProgress, RuntimeStatus } from "../types";
+import type { AppSettings, BackupCounts, BackupFile, CatalogEntry, DeviceInfo, DlProgress, MirrorStatus, RuntimeStatus } from "../types";
 
 function backupKind(kind: string): string {
   if (kind.startsWith("auto")) return "자동";
@@ -20,6 +20,70 @@ function backupKind(kind: string): string {
   return "직접";
 }
 
+/** 두 번째 백업 위치 (1.0.1): 다른 드라이브·폴더에도 백업 사본을 둔다 */
+function BackupMirror({ onChanged }: { onChanged: () => void }) {
+  const { toast } = useStore();
+  const st = useLoad(() => api.backupMirrorStatus(), []);
+  const [busy, setBusy] = useState(false);
+  const set = async (dir: string | null) => {
+    setBusy(true);
+    try {
+      const r: MirrorStatus = await api.setBackupMirror(dir);
+      toast(dir ? `두 번째 백업 위치를 정하고 백업 ${r.count}개를 복사했습니다.` : "두 번째 백업 위치를 그만 씁니다. 이미 복사한 파일은 그대로 둡니다.");
+      st.reload();
+      onChanged();
+    } catch (e) {
+      toast(errorText(e), "error");
+    } finally {
+      setBusy(false);
+    }
+  };
+  const pick = async () => {
+    const dir = await pickFolder("두 번째 백업 위치 고르기 (D 드라이브 같은 다른 드라이브 권장)").catch(() => null);
+    if (dir) await set(dir);
+  };
+  const m = st.data;
+  return (
+    <div className="mirror-box" data-testid="backup-mirror">
+      <h3>두 번째 백업 위치</h3>
+      <p className="small muted">
+        기본 백업은 이 PC의 사용자 폴더(보통 C 드라이브)에 저장됩니다. 학교 PC처럼 드라이브가 나뉘어 있으면 D 드라이브 같은 다른 곳을 정해 두세요. 백업할 때마다 그곳에도
+        사본을 저장하고(자동 백업은 최근 14개), C 드라이브가 초기화돼도 아래 목록에서 그 백업으로 되돌릴 수 있습니다.
+      </p>
+      {m?.dir ? (
+        <p className="small">
+          지금 위치: <code>{m.folder}</code> · 백업 {m.count}개{m.last_ok && ` · 마지막 복사 ${fmtDateTime(m.last_ok)}`}
+        </p>
+      ) : (
+        <p className="small">정하지 않음</p>
+      )}
+      {m?.dir && !m.available && <p className="hint warn">그 위치를 찾지 못했습니다. 드라이브나 USB가 연결돼 있는지 확인해 주세요. 연결되면 다음 백업 때 다시 복사합니다.</p>}
+      {m?.dir && m.available && m.last_error && <p className="hint warn">마지막 복사가 실패했습니다: {m.last_error}</p>}
+      {m?.same_drive && <p className="hint warn">데이터와 같은 드라이브입니다. 드라이브가 고장 나거나 초기화되면 함께 사라지므로 다른 드라이브를 권합니다.</p>}
+      <div className="row gap wrap">
+        <button onClick={() => void pick()} disabled={busy}>
+          <IconFolder size={15} /> {m?.dir ? "위치 바꾸기" : "폴더 고르기"}
+        </button>
+        {m?.dir && (
+          <>
+            <button onClick={() => void api.openFolder("mirror").catch((e) => toast(errorText(e), "error"))}>열기</button>
+            <button
+              onClick={() =>
+                void confirmDialog("두 번째 백업 위치를 그만 쓸까요? 이미 복사한 백업 파일은 지우지 않습니다.", { okText: "그만 쓰기" }).then((ok) => {
+                  if (ok) void set(null);
+                })
+              }
+              disabled={busy}
+            >
+              그만 쓰기
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /** 백업 되돌리기 확인: 백업 안의 양을 보여 주고, 지금 데이터는 먼저 백업된다는 것을 알린다 */
 function RestoreDialog({ backup, onClose }: { backup: BackupFile; onClose: () => void }) {
   const [counts, setCounts] = useState<BackupCounts | null>(null);
@@ -27,14 +91,14 @@ function RestoreDialog({ backup, onClose }: { backup: BackupFile; onClose: () =>
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     api
-      .inspectBackup(backup.name)
+      .inspectBackup(backup.name, backup.location)
       .then(setCounts)
       .catch((e) => setError(errorText(e)));
-  }, [backup.name]);
+  }, [backup.name, backup.location]);
   const go = async () => {
     setBusy(true);
     try {
-      await api.requestRestore(backup.name);
+      await api.requestRestore(backup.name, backup.location);
       await api.restartApp();
     } catch (e) {
       setError(errorText(e));
@@ -615,6 +679,7 @@ export function SettingsPage() {
               </button>
               <button onClick={() => void api.openFolder("logs")}>기술 로그 열기</button>
             </div>
+            <BackupMirror onChanged={backups.reload} />
             {backups.data && backups.data.length > 0 && (
               <details className="backup-list">
                 <summary>
@@ -633,7 +698,10 @@ export function SettingsPage() {
                     {backups.data.map((b) => (
                       <tr key={b.name}>
                         <td>{b.taken_at || b.name}</td>
-                        <td>{backupKind(b.kind)}</td>
+                        <td>
+                          {backupKind(b.kind)}
+                          {b.location === "mirror" && <span className="tag">두 번째 위치</span>}
+                        </td>
                         <td>{bytes(b.size)}</td>
                         <td>
                           <button onClick={() => setRestoring(b)}>되돌리기</button>
